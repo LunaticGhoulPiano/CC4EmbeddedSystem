@@ -30,6 +30,7 @@ CC4EmbeddedSystem
 │   ├──<Source Directory 1>.c       // auto-generated
 │   ├──<Source Directory 2>.c       // auto-generated
 │   ├── ...                         // auto-generated
+├── LICENSE
 └── README.md
 ```
 
