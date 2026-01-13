@@ -1,0 +1,14 @@
+[project]
+name = "CC4EmbeddedSystem"
+version = "2.0.0"
+description = "A tiny GUI for Windows to compress front-end files and convert them into a single C file, in order to minimize memory usage while also being convenient for embedded system development."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "customtkinter>=5.2.2",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.18.0",
+]

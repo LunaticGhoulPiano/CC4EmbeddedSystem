@@ -1,0 +1,16 @@
+# general
+**/__pycache__/
+**/.venv/
+
+# auto-generated
+**/config.json
+
+# pyinstaller
+**/build/
+**/dist/
+**/*.spec
+
+# tools
+**/*.jar
+**/*.exe
+**/*.dll
