@@ -1,4 +1,4 @@
-# CC4EmbeddedSystem
+# [CC4EmbeddedSystem](https://github.com/LunaticGhoulPiano/CC4EmbeddedSystem)
 ## Description
 A tiny tool for Windows to compress front-end files and convert them into a single C file, in order to minimize memory usage while also being convenient for embedded system development.
 
