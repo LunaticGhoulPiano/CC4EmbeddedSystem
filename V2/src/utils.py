@@ -100,14 +100,13 @@ def check_java() -> None:
     try:
         result = subprocess.run(
             ["java", "-version"],
-            capture_output = True,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.STDOUT, # java design to send version info as stderr, so merge stdout and stderr together
             text = True,
-            timeout = 5
+            check = True
         )
-        
         if result.returncode != 0:
             raise CC_Errs.CC_Java_Err("Failed to get java version. Please restart or reinstall java (jdk is recommended).")
-            
     except Exception as e:
         raise CC_Errs.CC_Java_Err(f"Error occurred while running java: {str(e)}")
 

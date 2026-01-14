@@ -73,7 +73,7 @@ class Filename_Input(ctk.CTkFrame):
 class CTK_Window(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("CC4EmbeddedSystem v2.0.0")
+        self.title("CC4EmbeddedSystem v2.0.1")
         self.window_width = 1100
         self.window_height = 200
         self.center_window(self.window_height, self.window_width)
