@@ -1,4 +1,4 @@
-# CC4EmbeddedSystem V1
+# CC4EmbeddedSystem V2
 ## Structure
 ```
 <YOUR_DOWNLOAD_PATH>
