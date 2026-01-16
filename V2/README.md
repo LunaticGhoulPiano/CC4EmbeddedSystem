@@ -11,7 +11,8 @@
 - Has a simple, intuitive gui (using custontkinter) to use.
 
 ## Screenshot
-![](./Screenshot/screenshot.png)
+### v2.0.1
+![](./Screenshot/v2.0.1.png)
 
 ## Config.json format
 This config file is in order to record your paths and output file name.
