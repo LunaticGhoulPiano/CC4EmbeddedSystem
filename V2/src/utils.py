@@ -2,24 +2,11 @@ import os
 import re
 import sys
 import json
+import copy
+import time
 import subprocess
 import shutil
 import CC_Errs
-
-config = {
-    "tools": {
-        "htmlcompressor": "",
-        "yuicompressor": "",
-        "makefsdata": "",
-        "msvcr100d": ""
-    },
-    "folders": {
-        "src": "",
-        "compress_dest": "",
-        "convert_dest": ""
-    },
-    "output_c_file": "fsdata.c"
-}
 
 def get_app_root() -> str:
     if hasattr(sys, "_MEIPASS"): # project root path for user
@@ -27,71 +14,56 @@ def get_app_root() -> str:
     else: # project root path for developer
         return os.path.dirname(os.path.abspath(__file__))
 
-def set_single_tool_path(tool: str,tool_path: str) -> None:
-    config["tools"][tool] = tool_path
+ASSETS_DIR = os.path.join(get_app_root(), "assets")
+CONFIG_TEMPLATE = {
+    "tools": {
+        "htmlcompressor": os.path.join(ASSETS_DIR, "htmlcompressor-1.5.3.jar"),
+        "yuicompressor": os.path.join(ASSETS_DIR, "yuicompressor-2.4.8.jar"),
+        "makefsdata": os.path.join(ASSETS_DIR, "makefsdata.exe"),
+        "msvcr100d": os.path.join(ASSETS_DIR, "msvcr100d.dll")
+    },
+    "folders": {
+        "src": "",
+        "dest": ""
+    },
+    "output_c_file": "fsdata.c"
+}
 
-def save_user_configs(mode: str, content: dict[str, str]) -> None:
+def save_user_configs(key: str, content: dict[str, str]) -> None:
     config_path = os.path.join(get_app_root(), "config.json")
+    data = {}
     if os.path.exists(config_path):
         with open(config_path, "r", encoding = "utf-8") as f:
             try:
                 data = json.load(f)
             except json.JSONDecodeError:
                 data = {}
-    else:
-        data = {}
-    
-    if mode == "output_c_file":
+
+    if key == "output_c_file":
         data["output_c_file"] = content["output_c_file"]
     else:
-        if mode not in data:
-            data[mode] = {}
-        
-        # check tools' parent folders
-        if mode == "tools":
-            # ensure all paths exist
-            error_tools = []
-            for tool, path in content.items():
-                if not path or not os.path.exists(path):
-                    error_tools.append(tool)
-            if error_tools:
-                raise CC_Errs.CC_Tool_Err(f"{', '.join(error_tools)} not found!", "Tool Path Not Chosen Error")
-
-            # check corresponding tools are in the same folder
-            is_same_c1 = True
-            if os.path.dirname(content["htmlcompressor"]) != os.path.dirname(content["yuicompressor"]):
-                is_same_c1 = False
-            is_same_c2 = True
-            if os.path.dirname(content["makefsdata"]) != os.path.dirname(content["msvcr100d"]):
-                is_same_c2 = False
-            if not is_same_c1 and not is_same_c2:
-                raise CC_Errs.CC_Tool_Err("htmlcompressor*.jar and yuicompressor*.jar MUST be under the SAME folder; also, makefsdata and msvcr100d MUST be under the SAME folder.", "Tool Location Error")
-            elif not is_same_c1:
-                raise CC_Errs.CC_Tool_Err("htmlcompressor and yuicompressor MUST be under the SAME folder.", "Tool Location Error")
-            elif not is_same_c2:
-                raise CC_Errs.CC_Tool_Err("makefsdata.exe and msvcr100d.dll MUST be under the SAME folder.", "Tool Location Error")
-
-        data[mode].update(content)
+        if key not in data:
+            data[key] = {}
+        data[key].update(content)
 
     with open(config_path, "w", encoding = "utf-8") as f:
         json.dump(data, f, indent = 4, ensure_ascii = False)
 
 def get_user_configs() -> dict[str, str]:
     config_path = os.path.join(get_app_root(), "config.json")
+    def get_empty_config() -> dict[str, str]:
+        c = copy.deepcopy(CONFIG_TEMPLATE)
+        with open(config_path, "w", encoding = "utf-8") as f:
+            json.dump(c, f, indent = 4)
+        return c
     try:
-        if not os.path.exists(config_path): # first time or path was deleted
-            # create empty config
-            with open(config_path, "w", encoding = "utf-8") as f:
-                json.dump(config, f, indent = 4)
-            return config
+        if not os.path.exists(config_path):
+            return get_empty_config()
         else: # load to tool_paths
             with open(config_path, "r", encoding = "utf-8") as f:
                 return json.load(f)
-    except: # config format error, force to overwrite
-        # create empty config
-        with open(config_path, "w", encoding = "utf-8") as f:
-            json.dump(config, f, indent = 4)
-        return config
+    except:
+        return get_empty_config()
 
 def check_java() -> None:
     if shutil.which("java") is None:
@@ -110,12 +82,11 @@ def check_java() -> None:
     except Exception as e:
         raise CC_Errs.CC_Java_Err(f"Error occurred while running java: {str(e)}")
 
-def validate_by_regex(path: str, pattern: str, tool_name: str) -> str:
+def validate_tool(path: str, pattern: str, tool_name: str) -> str:
     # check if tool exist
     if not path or not os.path.exists(path):
-        print('not')
         raise CC_Errs.CC_Tool_Err(f"{tool_name} not found!", "Tool Not Found Error")
-    # validate
+    # validate file name format
     filename = os.path.basename(path)
     if not re.match(pattern, filename, re.IGNORECASE):
         if "makefsdata" in tool_name.lower():
@@ -129,28 +100,37 @@ def validate_by_regex(path: str, pattern: str, tool_name: str) -> str:
             raise CC_Errs.CC_Tool_Err(f"Detected: {filename}\nExpected: {expected}", "Compressor Name Format Error")
     return path
 
-def compress_files() -> None:
+def check_is_same_parent_folder(tools: list[str]) -> None:
+    parent = ""
+    for tool in tools:
+        if not parent:
+            parent = os.path.dirname(tool)
+        else:
+            if parent != os.path.dirname(tool):
+                tools_str = ", ".join(tools)
+                raise CC_Errs.CC_Tool_Err(f"{tools_str} should be in the same folder!", "Tool Not In Same Folder Error")
+
+def compress_then_convert() -> None:
     # check env
     check_java()
-    # get paths
+
+    # get and check tool paths
     paths = get_user_configs()
     tool_paths = paths.get("tools", {})
     folder_paths = paths.get("folders", {})
-    hp = validate_by_regex(tool_paths.get("htmlcompressor", ""), r"^htmlcompressor.*-\d+\.\d+\.\d+\.jar$", "htmlcompressor") # htmlcompressor*-x.y.z.jar
-    _ = validate_by_regex(tool_paths.get("yuicompressor", ""), r"^yuicompressor.*-\d+\.\d+\.\d+\.jar$", "yuicompressor") # yuicompressor*-x.y.z.jar
+    hp = validate_tool(tool_paths.get("htmlcompressor", ""), r"^htmlcompressor.*-\d+\.\d+\.\d+\.jar$", "htmlcompressor") # htmlcompressor*-x.y.z.jar
+    yp = validate_tool(tool_paths.get("yuicompressor", ""), r"^yuicompressor.*-\d+\.\d+\.\d+\.jar$", "yuicompressor") # yuicompressor*-x.y.z.jar
+    check_is_same_parent_folder([hp, yp]) # validate if tool parent paths are the same
+
+    # get src path
     src = folder_paths.get("src", "")
-    dest = folder_paths.get("compress_dest", "")
-    if not src and not dest:
-        raise CC_Errs.CC_Exec_Err("Source Folder Path and Destination Folder Path Has Not Been Set!")
-    elif not src:
+    if not src:
         raise CC_Errs.CC_Exec_Err("Source Folder Path Has Not Been Set!")
-    elif not dest:
-        raise CC_Errs.CC_Exec_Err("Destination Folder Path Has Not Been Set!")
+    
+    # set temp compress dest path: src + _yyyyMMddHHmmss
+    dest = os.path.join(os.path.dirname(src), f"{os.path.basename(src)}_{time.strftime('%Y%m%d%H%M%S', time.localtime())}")
     
     # run
-    ## delete
-    if os.path.exists(dest):
-        shutil.rmtree(dest)
     ## copy
     shutil.copytree(src, dest)
     ## run in subprocess
@@ -164,25 +144,27 @@ def compress_files() -> None:
     try:
         subprocess.run(cmd, check = True)
     except Exception as e:
+        shutil.rmtree(dest)
         raise CC_Errs.CC_Exec_Err(f"Failed to compress files: {str(e)}")
     
-    # redirect: use Windows Explorer to open output folder
-    os.startfile(dest)
+    # convert
+    convert_files(dest)
 
-def convert_files() -> None:
+def convert_files(compress_src: str = None) -> None:
     paths = get_user_configs()
+    # get and check tool paths
     tool_paths = paths.get("tools", {})
-    src = paths.get("folders", {}).get("compress_dest", "") #paths["folders"]["compress_dest"]
-    dest = paths.get("folders", {}).get("convert_dest", "")
-    if not src and not dest:
-        raise CC_Errs.CC_Exec_Err("Conversion Source Folder Path and Destination Folder Path Has Not Been Set!")
-    elif not src:
+    ep = validate_tool(tool_paths.get("makefsdata", ""), r"^makefsdata\.exe$", "makefsdata")
+    dp = validate_tool(tool_paths.get("msvcr100d", ""), r"^msvcr100d\.dll$", "MSVCR100D Library")
+    check_is_same_parent_folder([ep, dp]) # validate if tool parent paths are the same
+    # get src/dest paths
+    src = compress_src if compress_src else paths.get("folders", {}).get("src", "")
+    if not src:
         raise CC_Errs.CC_Exec_Err("Conversion Source Folder Path Has Not Been Set!")
-    elif not dest:
+    dest = paths.get("folders", {}).get("dest", "")
+    if not dest:
         raise CC_Errs.CC_Exec_Err("Conversion Destination Folder Path Has Not Been Set!")
     dest = os.path.join(dest, paths["output_c_file"])
-    ep = validate_by_regex(tool_paths.get("makefsdata", ""), r"^makefsdata\.exe$", "makefsdata")
-    _ = validate_by_regex(tool_paths.get("msvcr100d", ""), r"^msvcr100d\.dll$", "MSVCR100D Library")
 
     # run
     cmd = [ep, src, f"-f:{dest}"]
@@ -190,6 +172,10 @@ def convert_files() -> None:
         subprocess.run(cmd, check = True)
     except Exception as e:
         raise CC_Errs.CC_Exec_Err(f"Failed to convert files: {str(e)}")
+    finally:
+        if compress_src and os.path.exists(compress_src):
+            time.sleep(0.5) # to avoid subprocess is using
+            shutil.rmtree(compress_src, ignore_errors = True)
     
     # redirect: use Windows Explorer to open output file path
     subprocess.run(["explorer", "/select,", os.path.normpath(dest)])
