@@ -1,5 +1,6 @@
 # CC4EmbeddedSystem V2
 ## Structure
+### v2.0.1
 ```
 <YOUR_DOWNLOAD_PATH>
 ├── CC4Embedded_<VERSION>.exe
@@ -12,6 +13,9 @@
 
 ## Screenshot
 ### v2.0.1
+1. Choose tools paths and **MUST** click "Save Settings" button.
+2. Choose the folder paths, and if you will use convert function, you **MUST** click "Confirm Output File Name" after input the file name.
+3. Click "Compress" or "Convert" button.
 ![](./Screenshot/v2.0.1.png)
 
 ## Config.json format
@@ -34,6 +38,8 @@ This config file is in order to record your paths and output file name.
 ```
 
 ## Notices
+### v2.0.1
+- In v2.0.1, you need to **maunally** download and place the tools, also need to set the tool paths, because I want to avoid the case that user already have tools, and need to re-download again.
 1. Your ```htmlcompressor*.jar``` and ```yuicompressor*.jar``` **MUST be placed under the same folder**, and ```makefsdata.exe``` and ```msvcr100d.dll``` also **MUST be placed under the same folder**.
 2. Two compressors' name MUST in the following format:
     - ```htmlcompressor-x.y.z.jar```
