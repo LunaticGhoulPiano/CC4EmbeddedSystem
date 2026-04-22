@@ -223,7 +223,14 @@ function bufferToHexCArray(buf: Buffer): string {
 // ----------------------------------------------------------------------
 // 4. export API
 // ----------------------------------------------------------------------
-export async function runMakeFsData(opts: MakeFsDataOptions): Promise<void> {
+
+export interface BuildStats {
+    originalSize: number;
+    compressedSize: number;
+    filesCount: number;
+}
+
+export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats> {
     console.log(`🚀 CC4EmbeddedSystem V3: Starting makefsdata compilation...`);
     
     // checkers
@@ -242,6 +249,8 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<void> {
 
     const allFiles = getFilesRecursive(opts.inputDir, opts.processSubs);
     const fileEntries: FileEntry[] = [];
+    let totalOriginalSize = 0;
+    let totalCompressedSize = 0;
 
     if (allFiles.length === 0) throw new Error(`Input directory is empty! Please put your web files (.html, .css, etc.) into:\n${path.resolve(opts.inputDir)}`);
 
@@ -254,15 +263,20 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<void> {
         const ext = path.extname(filePath).toLowerCase();
         let content = fs.readFileSync(filePath);
 
+        const originalFileSize = content.length;
+        totalOriginalSize += originalFileSize;
+
         if (['.html', '.htm', '.css', '.js'].includes(ext)) {
             const minifiedStr = await minify(content.toString('utf8'), activeCompressOpts);
 
             if (typeof minifiedStr === 'string') {
                 content = Buffer.from(minifiedStr, 'utf8');
-                console.log(`📦 Minified: ${relativePath}`);
+                console.log(`📦 Minified: ${relativePath} (${originalFileSize} -> ${content.length} bytes)`);
             }
         }
         else console.log(`📄 Copied: ${relativePath}`);
+
+        totalCompressedSize += content.length;
 
         // generate header
         const headerData = opts.includeHttpHeader ? generateHttpHeaders(filePath, content.length, opts) : { parts: [], totalBuffer: Buffer.alloc(0) };
@@ -364,5 +378,13 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<void> {
         cOutput += `#define FS_ROOT file_${rootNode.varName}\n#define FS_NUMFILES ${fileEntries.length + 1}\n`;
         fs.writeFileSync(opts.outputFile, cOutput);
         console.log(`\n✨ Success! Output written to: ${opts.outputFile}`);
+
+        return {
+            originalSize: totalOriginalSize,
+            compressedSize: totalCompressedSize,
+            filesCount: fileEntries.length
+        };
     }
+
+    throw new Error("No files processed.");
 }

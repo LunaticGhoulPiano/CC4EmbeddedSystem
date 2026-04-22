@@ -5,24 +5,40 @@
     <title>CC4EmbeddedSystem V3</title>
     <style>
         body { font-family: 'Consolas', monospace; background: #1e1e1e; color: #d4d4d4; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { background: #252526; padding: 30px 40px; border-radius: 8px; border: 1px solid #333; width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        .container { background: #252526; padding: 30px 40px; border-radius: 8px; border: 1px solid #333; width: 550px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
         h2 { color: #569cd6; margin-top: 0; display: flex; justify-content: center; align-items: center; gap: 12px; }
         .github-link { color: #d4d4d4; display: flex; align-items: center; transition: color 0.2s; text-decoration: none; }
         .github-link:hover { color: #ffffff; }
         .form-group { margin-bottom: 20px; }
         label { display: block; font-weight: bold; margin-bottom: 8px; color: #9cdcfe; }
-        input[type="text"] { width: 100%; padding: 10px; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; color: #d4d4d4; box-sizing: border-box; font-family: 'Consolas', monospace; }
+        
+        /* Input */
+        .input-row { display: flex; gap: 8px; }
+        input[type="text"] { flex: 1; padding: 10px; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; color: #d4d4d4; box-sizing: border-box; font-family: 'Consolas', monospace; }
         input[type="text"]:focus { outline: none; border-color: #569cd6; }
         input::placeholder { color: #888; }
+        
+        /* Browse */
+        .btn-browse { width: auto; padding: 0 15px; background: #3a3d41; font-size: 13px; border: 1px solid #555; color: #d4d4d4; cursor: pointer; border-radius: 4px; }
+        .btn-browse:hover { background: #45494e; }
+
         button { width: 100%; padding: 12px; background: #0e639c; color: white; border: none; border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; font-family: 'Consolas', monospace; }
         button:hover { background: #1177bb; }
         
-        /* Additional settings' styles */
+        /* Advanced Settings */
         details { background: #1e1e1e; padding: 12px; border-radius: 4px; border: 1px solid #444; margin-bottom: 20px; }
         summary { cursor: pointer; color: #c586c0; font-weight: bold; outline: none; user-select: none; }
         .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
         .checkbox-label { display: flex; align-items: center; font-weight: normal; color: #cccccc; cursor: pointer; font-size: 14px; margin-bottom: 0; }
         .checkbox-label input { margin-right: 8px; cursor: pointer; accent-color: #0e639c; }
+
+        /* Compression Stats Panel */
+        .stats-panel { background: #1e1e1e; border: 1px solid #444; border-radius: 4px; padding: 15px; margin-bottom: 20px; display: none; }
+        .stats-title { color: #4ec9b0; font-size: 14px; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px; font-weight: bold; }
+        .stats-info { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+        .bar-container { background: #444; height: 18px; border-radius: 9px; overflow: hidden; margin: 10px 0; position: relative; border: 1px solid #555; }
+        .bar-fill { background: #0e639c; height: 100%; width: 0%; transition: width 0.6s cubic-bezier(0.1, 0.7, 1.0, 0.1); }
+        .bar-text { position: absolute; width: 100%; text-align: center; font-size: 10px; line-height: 18px; color: #fff; text-shadow: 1px 1px 2px #000; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -39,22 +55,27 @@
     
     <div class="form-group">
         <label>Input Directory</label>
-        <input type="text" id="inputPath" placeholder="e.g., ./input_webpages">
+        <div class="input-row">
+            <input type="text" id="inputPath" placeholder="e.g., C:\Project\web">
+            <button type="button" class="btn-browse" onclick="handleBrowse('inputPath', 'dir')">Brows ...</button>
+        </div>
     </div>
 
     <div class="form-group">
         <label>Output File (fsdata.c)</label>
-        <input type="text" id="outputPath" placeholder="e.g., ./output_fsdata.c">
+        <div class="input-row">
+            <input type="text" id="outputPath" placeholder="e.g., ./fsdata.c">
+            <button type="button" class="btn-browse" onclick="handleBrowse('outputPath', 'file')">Brows ...</button>
+        </div>
     </div>
 
     <details>
         <summary>⚙️ Advanced Settings</summary>
-        
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #444;">
             <label style="margin-bottom: 0;">GUI Server Port</label>
             <div style="display: flex; gap: 8px;">
                 <input type="number" id="guiPort" style="width: 80px; padding: 6px; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; color: #d4d4d4; text-align: center; font-family: 'Consolas', monospace;" min="1" max="65535">
-                <button type="button" onclick="changePort()" style="width: auto; padding: 6px 12px; font-size: 14px; background: #007acc;">Apply</button>
+                <button type="button" onclick="changePort()" style="width: auto; padding: 6px 12px; font-size: 14px; background: #007acc; border: none; border-radius: 4px; color: white; cursor: pointer;">Apply</button>
             </div>
         </div>
 
@@ -73,6 +94,19 @@
         </div>
     </details>
 
+    <div id="statsPanel" class="stats-panel">
+        <div class="stats-title">📊 Compression Analysis</div>
+        <div class="stats-info">
+            <span>Compressed: <span id="compSize" style="color: #9cdcfe;">0</span> KB</span>
+            <span>Original: <span id="origSize" style="color: #ce9178;">0</span> KB</span>
+        </div>
+        <div class="bar-container">
+            <div id="barFill" class="bar-fill"></div>
+            <div id="barText" class="bar-text">0% Saved</div>
+        </div>
+        <div id="savingsInfo" style="font-size: 11px; color: #6a9955; text-align: center;"></div>
+    </div>
+
     <button onclick="startBuild()">Generate C Code</button>
 </div>
 
@@ -80,53 +114,51 @@
     let isRedirecting = false;
     document.getElementById('guiPort').value = window.location.port || '80';
 
-    // get package.json version
+    async function handleBrowse(targetId, type) {
+        try {
+            const res = await fetch(`/api/browse?type=${type}`);
+            const data = await res.json();
+            if (data.success && data.path) {
+                document.getElementById(targetId).value = data.path;
+            }
+        }
+        catch (e) {
+            console.error('Failed to open system dialog', e);
+        }
+    }
+
     window.addEventListener('DOMContentLoaded', async () => {
+        await fetch('/api/cancel-shutdown', { method: 'POST' });
         try {
             const res = await fetch('/api/version');
             const data = await res.json();
             if (data.version) document.getElementById('app-title-text').innerText = `CC4EmbeddedSystem V3 (${data.version})`;
         }
-        catch (error) {
-            console.error('Can\'t get package.json version!', error);
-        }
+        catch (error) { console.error('Can\'t get version!', error); }
     });
 
     async function changePort() {
         const newPort = document.getElementById('guiPort').value.trim();
-        const currentPort = window.location.port || '80';
-
-        if (!newPort || newPort === currentPort) return;
-
+        if (! newPort) return;
+        
         const res = await fetch('/api/change-port', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ newPort })
         });
-
+        
         const result = await res.json();
         if (result.success) {
-            isRedirecting = true; 
-            
-            // 0.5s restart server and redirect
-            setTimeout(() => {
-                window.location.href = `${window.location.protocol}//${window.location.hostname}:${newPort}`;
-            }, 500);
+            isRedirecting = true;
+            setTimeout(() => { window.location.href = `${window.location.protocol}//${window.location.hostname}:${newPort}`; }, 500);
         }
-        else alert('❌ Failed to change port: \n' + result.message);
     }
 
-    // run
     async function startBuild() {
         const inPath = document.getElementById('inputPath').value.trim();
         const outPath = document.getElementById('outputPath').value.trim();
+        if (! inPath || ! outPath) { alert('❌ Paths required.'); return; }
 
-        if (! inPath || ! outPath) {
-            alert('❌ Compile Error: \nBoth Input Directory and Output File paths are required.');
-            return;
-        }
-
-        // get all checkboxes
         const minifyOptions = {
             collapseWhitespace: document.getElementById('opt-collapseWhitespace').checked,
             removeComments: document.getElementById('opt-removeComments').checked,
@@ -143,24 +175,46 @@
         const res = await fetch('/api/build', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                inputPath: inPath, 
-                outputPath: outPath,
-                minifyOpts: minifyOptions
-            })
+            body: JSON.stringify({ inputPath: inPath, outputPath: outPath, minifyOpts: minifyOptions })
         });
-
         const result = await res.json();
 
-        if (result.success) alert('✨ Success: \nC Array successfully generated at ' + outPath);
-        else alert('❌ Compile Error: \n' + result.message);
+        if (result.success) {
+            // visualize
+            if (result.stats) {
+                const panel = document.getElementById('statsPanel');
+                panel.style.display = 'block';
+
+                const { originalSize, compressedSize } = result.stats;
+                const origKB = (originalSize / 1024).toFixed(2);
+                const compKB = (compressedSize / 1024).toFixed(2);
+                
+                // ratio: the saved percentage
+                const ratio = originalSize > 0 ? (((originalSize - compressedSize) / originalSize) * 100).toFixed(1) : 0;
+                // compressedRatio: the remainings percentage
+                const compressedRatio = (100 - ratio).toFixed(1);
+
+                document.getElementById('origSize').innerText = origKB;
+                document.getElementById('compSize').innerText = compKB;
+                document.getElementById('barText').innerText = `${ratio}% Size Reduced`;
+                
+                // actual used percentage
+                setTimeout(() => {
+                    document.getElementById('barFill').style.width = compressedRatio + '%';
+                }, 50);
+
+                document.getElementById('savingsInfo').innerText = `✨ Total saved: ${(origKB - compKB).toFixed(2)} KB`;
+            }
+
+            alert('✨ Success! C Code generated at ' + outPath);
+        } else {
+            alert('❌ Error: ' + result.message);
+        }
     }
     
-    // listen close window
     window.addEventListener('beforeunload', () => {
         if (! isRedirecting) navigator.sendBeacon('/api/shutdown');
     });
 </script>
-
 </body>
 </html>

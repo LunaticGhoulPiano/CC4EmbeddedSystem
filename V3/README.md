@@ -2,7 +2,7 @@
 - This version based on [html-minifier-next](https://github.com/j9t/html-minifier-next) and rewrite [lwIP makefsdata](https://github.com/m-labs/lwip/tree/master/src/apps/httpd/makefsdata), run on localhost, default port: ```3000```.
 - This tool is deployed on [npm package](https://www.npmjs.com/package/cc4-embedded-system).
 
-![](./Screenshot/v3.0.1.png)
+![](./Screenshot/v3.1.1.png)
 
 ## Structure
 ```text
@@ -14,7 +14,7 @@ CC4EmbeddedSystem/
 ├── public/
 │   └── index.html    // Web GUI dashboard
 ├── Sereenshot/
-│   └── v3.0.1.png    // Demo image
+│   └── v3.1.1.png    // Demo image
 ├── node_modules/     // Required submodules during development
 ├── dist/             // Compiled JavaScript output (Auto-generated)
 ├── package.json      // Project configuration & dependencies
