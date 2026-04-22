@@ -12,9 +12,13 @@ CC4EmbeddedSystem/
 │   └── makefsdata.ts // Core C code generation & minification logic
 ├── public/
 │   └── index.html    // Web GUI dashboard
+├── Sereenshot/
+│   └── v3.0.1.png    // Demo image
+├── node_modules/     // Required submodules during development
 ├── dist/             // Compiled JavaScript output (Auto-generated)
-├── tsconfig.json     // TypeScript configuration
-└── package.json      // Project configuration & dependencies
+├── package.json      // Project configuration & dependencies
+├── package-lock.json // Project configuration & dependencies
+└── tsconfig.json     // TypeScript configuration
 ```
 
 ## Commands
