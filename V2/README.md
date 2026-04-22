@@ -83,3 +83,9 @@ This config file is in order to record your paths and output file name.
 ### v2.1.0
 1. All tools are in ```/assets```, if you want to use your specific version, simply replace it (note that the naming format is same as descriptions in v2.0.1).
 2. ```"Compress ⇒ Convert"``` button will compress the original folder into a temporary folder, then convert it to c file. After conversion, the temparary folder will be deleted.
+
+## Just a notes for me
+- Command for packing using ```pyinstaller``` with ```uv``` under the current project (V2) structure:
+    ```pwsh
+    PS C:\...\CC4EmbeddedSystem\V2> uv run pyinstaller --noconfirm --onefile --windowed --clean --name "CC4Embedded_V2.0.0" --collect-all "customtkinter" --paths "src" src/main.py
+    ```
