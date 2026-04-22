@@ -1,6 +1,6 @@
 {
   "name": "cc4-embedded-system",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "A modern typescript version of makefsdata based on html-minifier-next and lwIP v1.3.1",
   "bin": {
     "cc4es": "./dist/gui.js"

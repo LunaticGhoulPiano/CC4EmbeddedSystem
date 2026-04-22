@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /*
  * ==============================================================================
  * CC4EmbeddedSystem V3 (makefsdata)
@@ -59,91 +57,20 @@
  * ==============================================================================
  */
 
-// modern ESM
-import express from 'express'; 
-import open from 'open';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runMakeFsData, MakeFsDataOptions } from './makefsdata.js'; 
-import { getPackageVersion } from './utils.js';
 
-const __filename: string = fileURLToPath(import.meta.url);
-const __dirname: string = path.dirname(__filename);
-const app = express();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// port default: 3000
-let PORT: number = parseInt(process.env.PORT || '3000', 10);
-const portArgIndex = process.argv.indexOf('--port');
-if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
-    const parsedPort = parseInt(process.argv[portArgIndex + 1]!, 10);
-    if (!isNaN(parsedPort)) PORT = parsedPort;
-}
-
-let server: any;
-
-app.use(express.json());
-app.use(express.static(path.join(__dirname, '../public')));
-
-app.get('/api/version', (_req: express.Request, res: express.Response) => {
-    res.json({ version: getPackageVersion() });
-});
-
-// main
-app.post('/api/build', async (req: express.Request, res: express.Response) => {
-    // get minifyOpts
-    const { inputPath, outputPath, minifyOpts } = req.body;
-    const opts: MakeFsDataOptions = {
-        inputDir: inputPath,
-        outputFile: outputPath,
-        processSubs: true,
-        includeHttpHeader: true,
-        useHttp11: false,
-        supportSsi: true,
-        precalcChksum: false,
-        minifyOpts: minifyOpts
-    };
-
+export const getPackageVersion = (): string => {
     try {
-        await runMakeFsData(opts);
-        await open(path.dirname(outputPath));
-        res.json({ success: true });
+        const pkgPath = path.join(__dirname, '../package.json');
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+        return pkg.version || "LTS";
     }
-    catch (error: any) {
-        res.json({ success: false, message: error.message });
+    catch (error) {
+        return "LTS";
     }
-});
-
-app.post('/api/shutdown', (_req: express.Request, res: express.Response) => {
-    console.log('👋 Window closed, shutting down ...');
-    res.json({ success: true });
-    setTimeout(() => { process.exit(0); }, 500);
-});
-
-app.post('/api/change-port', (req: express.Request, res: express.Response): void => {
-    const parsedPort = parseInt(req.body.newPort, 10);
-    
-    if (isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-        res.json({ success: false, message: 'Invalid port number.' });
-        return; 
-    }
-
-    res.json({ success: true });
-
-    // restart
-    setTimeout(() => {
-        if (server) {
-            server.closeAllConnections(); 
-            server.close(() => {
-                PORT = parsedPort;
-                server = app.listen(PORT, () => {
-                    console.log(`🔄 Server successfully restarted on port ${PORT}`);
-                });
-            });
-        }
-    }, 100);
-});
-
-server = app.listen(PORT, async () => {
-    console.log(`✨ GUI Server started! Opening in browser...`);
-    await open(`http://localhost:${PORT}`);
-});
+};

@@ -61,22 +61,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { minify } from 'html-minifier-next';
+import { getPackageVersion } from './utils.js';
 
 // ----------------------------------------------------------------------
 // 1. Configs & Version Recovery
 // ----------------------------------------------------------------------
 const TCP_MSS: number = 1460;
 const LWIP_VERSION: string = "1.3.1"; // this makefsdata.ts is based on lwIP v1.3.1
-
-const getPackageVersion = (): string => {
-    try {
-        const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-        return pkg.version || "0.0.0";
-    }
-    catch {
-        return "v3.0.1";
-    }
-};
 
 // html-minifier-next options
 const COMPRESS_OPTS_DEFAULT = {

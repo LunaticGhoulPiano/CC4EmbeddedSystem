@@ -62,6 +62,7 @@ CC4EmbeddedSystem
 │   ├── README.md
 │   ├── src
 │   │   ├── gui.ts
+│   │   ├── utils.ts
 │   │   └── makefsdata.ts
 │   ├── public
 │   │   └── index.html

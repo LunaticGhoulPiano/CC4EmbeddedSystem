@@ -9,6 +9,7 @@
 CC4EmbeddedSystem/
 ├── src/
 │   ├── gui.ts        // Express server & CLI entry point
+│   │   ├── utils.ts  // To get latest tool version
 │   └── makefsdata.ts // Core C code generation & minification logic
 ├── public/
 │   └── index.html    // Web GUI dashboard
