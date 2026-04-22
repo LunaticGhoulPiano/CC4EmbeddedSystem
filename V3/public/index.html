@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CC4EmbeddedSystem V3</title>
+    <style>
+        body { font-family: 'Consolas', monospace; background: #1e1e1e; color: #d4d4d4; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: #252526; padding: 30px 40px; border-radius: 8px; border: 1px solid #333; width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        h2 { color: #569cd6; margin-top: 0; display: flex; justify-content: center; align-items: center; gap: 12px; }
+        .github-link { color: #d4d4d4; display: flex; align-items: center; transition: color 0.2s; text-decoration: none; }
+        .github-link:hover { color: #ffffff; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-weight: bold; margin-bottom: 8px; color: #9cdcfe; }
+        input[type="text"] { width: 100%; padding: 10px; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; color: #d4d4d4; box-sizing: border-box; font-family: 'Consolas', monospace; }
+        input[type="text"]:focus { outline: none; border-color: #569cd6; }
+        input::placeholder { color: #888; }
+        button { width: 100%; padding: 12px; background: #0e639c; color: white; border: none; border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; font-family: 'Consolas', monospace; }
+        button:hover { background: #1177bb; }
+        
+        /* Additional settings' styles */
+        details { background: #1e1e1e; padding: 12px; border-radius: 4px; border: 1px solid #444; margin-bottom: 20px; }
+        summary { cursor: pointer; color: #c586c0; font-weight: bold; outline: none; user-select: none; }
+        .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
+        .checkbox-label { display: flex; align-items: center; font-weight: normal; color: #cccccc; cursor: pointer; font-size: 14px; margin-bottom: 0; }
+        .checkbox-label input { margin-right: 8px; cursor: pointer; accent-color: #0e639c; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>
+        <a href="https://github.com/LunaticGhoulPiano/CC4EmbeddedSystem" target="_blank" rel="noopener noreferrer" class="github-link" title="View Source on GitHub">
+            <svg height="28" viewBox="0 0 16 16" width="28" aria-hidden="true">
+                <path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path>
+            </svg>
+        </a>
+        <span id="app-title-text">CC4EmbeddedSystem V3</span>
+    </h2>
+    
+    <div class="form-group">
+        <label>Input Directory</label>
+        <input type="text" id="inputPath" placeholder="e.g., ./input_webpages">
+    </div>
+
+    <div class="form-group">
+        <label>Output File (fsdata.c)</label>
+        <input type="text" id="outputPath" placeholder="e.g., ./output_fsdata.c">
+    </div>
+
+    <details>
+        <summary>⚙️ Advanced Settings</summary>
+        
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #444;">
+            <label style="margin-bottom: 0;">GUI Server Port</label>
+            <div style="display: flex; gap: 8px;">
+                <input type="number" id="guiPort" style="width: 80px; padding: 6px; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; color: #d4d4d4; text-align: center; font-family: 'Consolas', monospace;" min="1" max="65535">
+                <button type="button" onclick="changePort()" style="width: auto; padding: 6px 12px; font-size: 14px; background: #007acc;">Apply</button>
+            </div>
+        </div>
+
+        <label style="margin-bottom: 10px; font-size: 14px;">Compression Options:</label>
+        <div class="options-grid">
+            <label class="checkbox-label"><input type="checkbox" id="opt-collapseWhitespace" checked> collapseWhitespace</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-removeComments" checked> removeComments</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-minifyJS" checked> minifyJS</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-minifyCSS" checked> minifyCSS</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-processConditionalComments" checked> conditionalComments</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-decodeEntities" checked> decodeEntities</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-removeAttributeQuotes"> removeAttributeQuotes</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-removeEmptyAttributes"> removeEmptyAttributes</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-removeRedundantAttributes"> redundantAttributes</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-useShortDoctype"> useShortDoctype</label>
+        </div>
+    </details>
+
+    <button onclick="startBuild()">Generate C Code</button>
+</div>
+
+<script>
+    let isRedirecting = false;
+    document.getElementById('guiPort').value = window.location.port || '80';
+
+    // get package.json version
+    window.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const res = await fetch('/api/version');
+            const data = await res.json();
+            if (data.version) document.getElementById('app-title-text').innerText = `CC4EmbeddedSystem V3 (${data.version})`;
+        }
+        catch (error) {
+            console.error('Can\'t get package.json version!', error);
+        }
+    });
+
+    async function changePort() {
+        const newPort = document.getElementById('guiPort').value.trim();
+        const currentPort = window.location.port || '80';
+
+        if (!newPort || newPort === currentPort) return;
+
+        const res = await fetch('/api/change-port', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ newPort })
+        });
+
+        const result = await res.json();
+        if (result.success) {
+            isRedirecting = true; 
+            
+            // 0.5s restart server and redirect
+            setTimeout(() => {
+                window.location.href = `${window.location.protocol}//${window.location.hostname}:${newPort}`;
+            }, 500);
+        }
+        else alert('❌ Failed to change port: \n' + result.message);
+    }
+
+    // run
+    async function startBuild() {
+        const inPath = document.getElementById('inputPath').value.trim();
+        const outPath = document.getElementById('outputPath').value.trim();
+
+        if (! inPath || ! outPath) {
+            alert('❌ Compile Error: \nBoth Input Directory and Output File paths are required.');
+            return;
+        }
+
+        // get all checkboxes
+        const minifyOptions = {
+            collapseWhitespace: document.getElementById('opt-collapseWhitespace').checked,
+            removeComments: document.getElementById('opt-removeComments').checked,
+            minifyJS: document.getElementById('opt-minifyJS').checked,
+            minifyCSS: document.getElementById('opt-minifyCSS').checked,
+            processConditionalComments: document.getElementById('opt-processConditionalComments').checked,
+            decodeEntities: document.getElementById('opt-decodeEntities').checked,
+            removeAttributeQuotes: document.getElementById('opt-removeAttributeQuotes').checked,
+            removeEmptyAttributes: document.getElementById('opt-removeEmptyAttributes').checked,
+            removeRedundantAttributes: document.getElementById('opt-removeRedundantAttributes').checked,
+            useShortDoctype: document.getElementById('opt-useShortDoctype').checked
+        };
+
+        const res = await fetch('/api/build', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                inputPath: inPath, 
+                outputPath: outPath,
+                minifyOpts: minifyOptions
+            })
+        });
+
+        const result = await res.json();
+
+        if (result.success) alert('✨ Success: \nC Array successfully generated at ' + outPath);
+        else alert('❌ Compile Error: \n' + result.message);
+    }
+    
+    // listen close window
+    window.addEventListener('beforeunload', () => {
+        if (! isRedirecting) navigator.sendBeacon('/api/shutdown');
+    });
+</script>
+
+</body>
+</html>
