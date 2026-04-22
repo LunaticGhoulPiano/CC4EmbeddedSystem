@@ -61,11 +61,12 @@
 
 import express from 'express'; 
 import open from 'open';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runMakeFsData, MakeFsDataOptions } from './makefsdata.js'; 
 import { getPackageVersion } from './utils.js';
-import { execSync } from 'node:child_process';
+import { execFile, ChildProcess } from 'node:child_process';
 import os from 'node:os';
 
 // prevent socket errors
@@ -86,11 +87,18 @@ if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
     if (!isNaN(parsedPort)) PORT = parsedPort;
 }
 
+let activeBrowseProcess: ChildProcess | null = null;
 let server: any;
 let shutdownTimer: NodeJS.Timeout | null = null;
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../public')));
+const publicPath = fs.existsSync(path.join(__dirname, 'public')) 
+    ? path.join(__dirname, 'public') 
+    : path.join(__dirname, '../public');
+
+console.log(`[System] Serving static files from: ${publicPath}`);
+
+app.use(express.static(publicPath));
 
 const cancelShutdown = () => {
     if (shutdownTimer) {
@@ -100,6 +108,85 @@ const cancelShutdown = () => {
     }
 };
 
+const scheduleShutdown = () => {
+    if (! shutdownTimer) {
+        shutdownTimer = setTimeout(() => {
+            closeBrowseProcess();
+            console.log('👋 Window closed, shutting down ...');
+            process.exit(0);
+        }, 2000);
+    }
+};
+
+const buildPowerShellArgs = (script: string): string[] => {
+    const encodedCommand = Buffer.from(script, 'utf16le').toString('base64');
+
+    return [
+        '-NoProfile',
+        '-STA',
+        '-EncodedCommand',
+        encodedCommand
+    ];
+};
+
+const closeBrowseProcess = () => {
+    if (activeBrowseProcess && ! activeBrowseProcess.killed) {
+        try {
+            activeBrowseProcess.kill();
+        }
+        catch (e) {
+            // ignore child cleanup error
+        }
+    }
+
+    activeBrowseProcess = null;
+};
+
+const runDialogCommand = (command: string, args: string[]): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const child = execFile(command, args, {
+            windowsHide: false,
+            maxBuffer: 1024 * 1024
+        }, (error, stdout, stderr) => {
+            if (activeBrowseProcess === child) activeBrowseProcess = null;
+
+            if (error) {
+                reject(new Error(stderr.trim() || error.message));
+                return;
+            }
+
+            resolve(stdout.trim());
+        });
+
+        activeBrowseProcess = child;
+    });
+};
+
+const buildWindowsDialogScript = (dialogLines: string[]): string => {
+    return [
+        'Add-Type -AssemblyName System.Windows.Forms',
+        'Add-Type -AssemblyName System.Drawing',
+        '$screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea',
+        '$owner = New-Object System.Windows.Forms.Form',
+        '$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual',
+        '$owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None',
+        '$owner.ShowInTaskbar = $false',
+        '$owner.TopMost = $true',
+        '$owner.Width = 1',
+        '$owner.Height = 1',
+        '$owner.Left = $screen.Left + [int]($screen.Width / 2)',
+        '$owner.Top = $screen.Top + [int]($screen.Height / 2)',
+        '$owner.Opacity = 0',
+        '$null = $owner.Show()',
+        '$null = $owner.Activate()',
+        '$owner.BringToFront()',
+        '[System.Windows.Forms.Application]::DoEvents()',
+        ...dialogLines,
+        '$owner.Close()',
+        '$owner.Dispose()'
+    ].join('\n');
+};
+
 app.get('/api/version', (_req, res) => {
     cancelShutdown();
     res.json({ version: getPackageVersion() });
@@ -107,13 +194,8 @@ app.get('/api/version', (_req, res) => {
 
 app.post('/api/shutdown', (_req, res) => {
     res.json({ success: true });
-    
-    if (! shutdownTimer) {
-        shutdownTimer = setTimeout(() => {
-            console.log('👋 Window closed, shutting down ...');
-            process.exit(0);
-        }, 2000); 
-    }
+    closeBrowseProcess();
+    scheduleShutdown();
 });
 
 app.post('/api/cancel-shutdown', (_req, res) => {
@@ -189,26 +271,59 @@ app.post('/api/change-port', (req: express.Request, res: express.Response): void
     }, 100);
 });
 
-app.get('/api/browse', (req, res) => {
+app.get('/api/browse', async (req: express.Request, res: express.Response): Promise<void> => {
+    cancelShutdown();
+
+    res.on('close', () => {
+        if (! res.writableEnded) {
+            closeBrowseProcess();
+            scheduleShutdown();
+        }
+    });
+
     const isDir = req.query.type === 'dir';
     const platform = os.platform();
-    let command = '';
 
     try {
-        if (platform === 'win32') { // Windows: Powershell + OpenFileDialog
-            if (isDir) command = `powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.CheckFileExists = $false; $f.CheckPathExists = $true; $f.FileName = 'Select Folder'; $f.ValidateNames = $false; if($f.ShowDialog() -eq 'OK'){ Split-Path $f.FileName }"`;
-            else command = `powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'C Files (*.c)|*.c|All Files (*.*)|*.*'; if($f.ShowDialog() -eq 'OK'){ $f.FileName }"`;
-        } 
-        else if (platform === 'darwin') { // macOS: darwin
-            if (isDir) command = `osascript -e 'POSIX path of (choose folder with prompt "Select Input Directory")'`;
-            else command = `osascript -e 'POSIX path of (choose file with prompt "Select Output File")'`;
-        } 
-        else { // Linux: Zenity
-            if (isDir) command = `zenity --file-selection --directory --title="Select Input Directory"`;
-            else command = `zenity --file-selection --title="Select Output File"`;
+        let result = '';
+
+        if (platform === 'win32') {
+            const script = isDir
+                ? buildWindowsDialogScript([
+                    '$dialog = New-Object System.Windows.Forms.FolderBrowserDialog',
+                    '$dialog.Description = "Select Input Directory"',
+                    'if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {',
+                    '    $dialog.SelectedPath',
+                    '}'
+                ])
+                : buildWindowsDialogScript([
+                    '$dialog = New-Object System.Windows.Forms.SaveFileDialog',
+                    '$dialog.Filter = "C Files (*.c)|*.c|All Files (*.*)|*.*"',
+                    '$dialog.DefaultExt = "c"',
+                    '$dialog.AddExtension = $true',
+                    '$dialog.OverwritePrompt = $true',
+                    'if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {',
+                    '    $dialog.FileName',
+                    '}'
+                ]);
+
+            result = await runDialogCommand('powershell.exe', buildPowerShellArgs(script));
+        }
+        else if (platform === 'darwin') {
+            result = await runDialogCommand('osascript', [
+                '-e',
+                isDir
+                    ? 'POSIX path of (choose folder with prompt "Select Input Directory")'
+                    : 'POSIX path of (choose file name with prompt "Select Output File")'
+            ]);
+        }
+        else {
+            result = await runDialogCommand('zenity', isDir
+                ? ['--file-selection', '--directory', '--title=Select Input Directory']
+                : ['--file-selection', '--save', '--confirm-overwrite', '--title=Select Output File', '--filename=fsdata.c']
+            );
         }
 
-        const result = execSync(command).toString().trim();
         res.json({ success: true, path: result || null });
     }
     catch (e) {

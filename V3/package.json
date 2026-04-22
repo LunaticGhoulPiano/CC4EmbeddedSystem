@@ -1,16 +1,21 @@
 {
   "name": "cc4-embedded-system",
-  "version": "3.1.0",
+  "version": "3.1.6",
   "description": "A modern typescript version of makefsdata based on html-minifier-next and lwIP v1.3.1",
   "bin": {
-    "cc4es": "./dist/gui.js"
+    "cc4es": "dist/gui.js"
   },
   "type": "module",
   "scripts": {
     "dev": "tsx src/gui.ts",
-    "build": "tsc",
+    "build": "tsc && xcopy /E /I /Y public dist\\public",
     "prepublishOnly": "npm run build"
   },
+  "files": [
+    "dist/",
+    "package.json",
+    "README.md"
+  ],
   "keywords": [
     "lwip",
     "makefsdata",

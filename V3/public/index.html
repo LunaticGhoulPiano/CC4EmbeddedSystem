@@ -110,22 +110,98 @@
     <button onclick="startBuild()">Generate C Code</button>
 </div>
 
+<style>
+    body.browse-locked .container {
+        pointer-events: none;
+        user-select: none;
+        filter: blur(1px);
+    }
+
+    #browseOverlay {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.55);
+        z-index: 9999;
+    }
+
+    body.browse-locked #browseOverlay {
+        display: flex;
+    }
+
+    .browse-overlay-card {
+        background: #252526;
+        color: #d4d4d4;
+        border: 1px solid #555;
+        border-radius: 8px;
+        padding: 20px 24px;
+        width: min(420px, calc(100vw - 40px));
+        text-align: center;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+        font-family: 'Consolas', monospace;
+    }
+
+    .browse-overlay-title {
+        color: #9cdcfe;
+        font-size: 16px;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+
+    .browse-overlay-text {
+        color: #cccccc;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+</style>
+
 <script>
     let isRedirecting = false;
+    let isBrowsing = false;
+    let isBrowsePending = false;
     document.getElementById('guiPort').value = window.location.port || '80';
 
+    function setBrowseState(active) {
+        isBrowsing = active;
+        document.body.classList.toggle('browse-locked', active);
+    }
+
     async function handleBrowse(targetId, type) {
+        if (isBrowsing || isBrowsePending) return;
+
+        isBrowsePending = true;
+
         try {
             const res = await fetch(`/api/browse?type=${type}`);
             const data = await res.json();
-            if (data.success && data.path) {
-                document.getElementById(targetId).value = data.path;
-            }
+
+            if (data.success && data.path) document.getElementById(targetId).value = data.path;
         }
         catch (e) {
             console.error('Failed to open system dialog', e);
         }
+        finally {
+            isBrowsePending = false;
+            setBrowseState(false);
+        }
     }
+
+    window.addEventListener('blur', () => {
+        if (isBrowsePending) setBrowseState(true);
+    });
+
+
+    window.addEventListener('keydown', (event) => {
+        const isReloadKey = event.key === 'F5';
+        const isRefreshShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r';
+
+        if (isBrowsing && (isReloadKey || isRefreshShortcut)) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    }, true);
 
     window.addEventListener('DOMContentLoaded', async () => {
         await fetch('/api/cancel-shutdown', { method: 'POST' });
@@ -211,10 +287,31 @@
             alert('❌ Error: ' + result.message);
         }
     }
-    
-    window.addEventListener('beforeunload', () => {
+
+    function notifyShutdown() {
         if (! isRedirecting) navigator.sendBeacon('/api/shutdown');
+    }
+    
+    window.addEventListener('beforeunload', (event) => {
+        if (isBrowsing || isBrowsePending) {
+            event.preventDefault();
+            event.returnValue = '';
+            return '';
+        }
     });
+
+    window.addEventListener('pagehide', notifyShutdown);
+    window.addEventListener('unload', notifyShutdown);
 </script>
+<div id="browseOverlay">
+    <div class="browse-overlay-card">
+        <div class="browse-overlay-title">Browse Dialog Open</div>
+        <div class="browse-overlay-text">
+            Please finish the system browse dialog first.<br>
+            Refresh and page navigation are temporarily disabled.
+        </div>
+    </div>
+</div>
+
 </body>
 </html>
