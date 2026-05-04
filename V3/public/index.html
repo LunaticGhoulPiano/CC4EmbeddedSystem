@@ -98,6 +98,7 @@
         <div class="stats-title">📊 Compression Analysis</div>
         <div class="stats-info">
             <span>Compressed: <span id="compSize" style="color: #9cdcfe;">0</span> KB</span>
+            <span>Converted: <span id="convSize" style="color: #dcdcaa;">0</span> KB</span>
             <span>Original: <span id="origSize" style="color: #ce9178;">0</span> KB</span>
         </div>
         <div class="bar-container">
@@ -261,9 +262,10 @@
                 const panel = document.getElementById('statsPanel');
                 panel.style.display = 'block';
 
-                const { originalSize, compressedSize } = result.stats;
+                const { originalSize, compressedSize, convertedSize } = result.stats;
                 const origKB = (originalSize / 1024).toFixed(2);
                 const compKB = (compressedSize / 1024).toFixed(2);
+                const convKB = (convertedSize / 1024).toFixed(2);
                 
                 // ratio: the saved percentage
                 const ratio = originalSize > 0 ? (((originalSize - compressedSize) / originalSize) * 100).toFixed(1) : 0;
@@ -272,6 +274,7 @@
 
                 document.getElementById('origSize').innerText = origKB;
                 document.getElementById('compSize').innerText = compKB;
+                document.getElementById('convSize').innerText = convKB;
                 document.getElementById('barText').innerText = `${ratio}% Size Reduced`;
                 
                 // actual used percentage

@@ -229,6 +229,7 @@ function bufferToHexCArray(buf: Buffer): string {
 export interface BuildStats {
     originalSize: number;
     compressedSize: number;
+    convertedSize: number;
     filesCount: number;
 }
 
@@ -390,11 +391,13 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
     if (rootNode) {
         cOutput += `#define FS_ROOT file_${rootNode.varName}\n#define FS_NUMFILES ${orderedFileEntries.length + (hasRealRedirhome ? 0 : 1)}\n`;
         fs.writeFileSync(opts.outputFile, cOutput);
+        const convertedSize = fs.statSync(opts.outputFile).size;
         console.log(`\n✨ Success! Output written to: ${opts.outputFile}`);
 
         return {
             originalSize: totalOriginalSize,
             compressedSize: totalCompressedSize,
+            convertedSize: convertedSize,
             filesCount: orderedFileEntries.length
         };
     }
