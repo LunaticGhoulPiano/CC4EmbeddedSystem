@@ -101,6 +101,8 @@ interface FileEntry {
     contentBuffer: Buffer; chksums: ChksumBlock[];
 }
 
+const REDIRHOME_PATH = '/redirhome.html';
+
 // ----------------------------------------------------------------------
 // 3. lwIP Helpers
 // ----------------------------------------------------------------------
@@ -302,6 +304,15 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         fileEntries.push({ varName, pathName: relativePath, nameBuffer, headerParts: headerData.parts, headerTotalBuffer: headerData.totalBuffer, contentBuffer: content, chksums });
     }
 
+    // find real redirhome.html
+    const redirhomeIndex = fileEntries.findIndex(file => file.pathName.toLowerCase() === REDIRHOME_PATH);
+    const hasRealRedirhome = redirhomeIndex >= 0;
+    const orderedFileEntries = hasRealRedirhome
+        ? fileEntries.slice(redirhomeIndex).concat(fileEntries.slice(0, redirhomeIndex))
+        : fileEntries;
+
+    if (hasRealRedirhome) console.log(`🔗 Bridge compatibility enabled: using ${REDIRHOME_PATH} as static chain head.`);
+
     // ====================================================================
     // C Code Generation
     // ====================================================================
@@ -311,7 +322,7 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
 
     if (opts.precalcChksum) {
         cOutput += `#if HTTPD_PRECALCULATED_CHECKSUM\n`;
-        for (const file of fileEntries) {
+        for (const file of orderedFileEntries) {
             cOutput += `const struct fsdata_chksum chksums_${file.varName}[] = {\n`;
             for (const chk of file.chksums) cOutput += `\t{${chk.offset}, 0x${chk.chksum.toString(16).padStart(4, '0')}, ${chk.len}},\n`;
             cOutput += `};\n`;
@@ -321,7 +332,7 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
     }
 
     // generate data arrays
-    for (const file of fileEntries) {
+    for (const file of orderedFileEntries) {
         cOutput += `static const unsigned int dummy_align_${file.varName} = 0;\n`;
         cOutput += `static const unsigned char data_${file.varName}[] = {\n`;
         cOutput += `\t/* ${file.pathName} (${file.nameBuffer.length} chars) */\n`;
@@ -342,27 +353,29 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         cOutput += `};\n\n\n\n`;
     }
 
-    // redirhome.html
-    cOutput += `/* --- Empty arrays --- */\n`;
-    cOutput += `static const unsigned char data__redirhome_html[] = {};\n`;
-    cOutput += `const struct fsdata_file file__redirhome_html[] = { {\n`;
-    cOutput += `\tfile_NULL,\n`;
-    cOutput += `\tdata__redirhome_html,\n`;
-    cOutput += `\tdata__redirhome_html + 16,\n`;
-    cOutput += `\tsizeof(data__redirhome_html) - 16,\n`;
-    cOutput += `\t1,\n`;
-    
-    // checksum
-    if (opts.precalcChksum) cOutput += `#if HTTPD_PRECALCULATED_CHECKSUM\n\t0, NULL,\n#endif /* HTTPD_PRECALCULATED_CHECKSUM */\n`;
-    cOutput += `}};\n\n\n`;
+    // if no real redirhome.html, generate empty arrays
+    if (! hasRealRedirhome) {
+        cOutput += `/* --- Empty arrays --- */\n`;
+        cOutput += `static const unsigned char data__redirhome_html[] = {};\n`;
+        cOutput += `const struct fsdata_file file__redirhome_html[] = { {\n`;
+        cOutput += `\tfile_NULL,\n`;
+        cOutput += `\tdata__redirhome_html,\n`;
+        cOutput += `\tdata__redirhome_html + 16,\n`;
+        cOutput += `\tsizeof(data__redirhome_html) - 16,\n`;
+        cOutput += `\t1,\n`;
+
+        if (opts.precalcChksum) cOutput += `#if HTTPD_PRECALCULATED_CHECKSUM\n\t0, NULL,\n#endif /* HTTPD_PRECALCULATED_CHECKSUM */\n`;
+        cOutput += `}};\n\n\n`;
+    }
 
 
     // generate linked-list
-    for (let i = fileEntries.length - 1; i >= 0; i--) {
-        const current = fileEntries[i]!;
+    for (let i = orderedFileEntries.length - 1; i >= 0; i--) {
+        const current = orderedFileEntries[i]!;
         
-        // last element didn't points to file_NULL but file__redirhome_html
-        const nextVar = fileEntries[i + 1] ? `file_${fileEntries[i+1]!.varName}` : 'file__redirhome_html';
+        const nextVar = orderedFileEntries[i + 1]
+            ? `file_${orderedFileEntries[i + 1]!.varName}`
+            : (hasRealRedirhome ? 'file_NULL' : 'file__redirhome_html');
         const nameLen = current.nameBuffer.length;
         
         // address: e.g. "/index.html\0" = '/' + 'i' + 'n' + 'd' + 'e' + 'x' + '.' + 'h' + 't' + 'm' + 'l' + '\0' = 12
@@ -373,16 +386,16 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         cOutput += `}};\n\n`;
     }
 
-    const rootNode = fileEntries[0];
+    const rootNode = orderedFileEntries[0];
     if (rootNode) {
-        cOutput += `#define FS_ROOT file_${rootNode.varName}\n#define FS_NUMFILES ${fileEntries.length + 1}\n`;
+        cOutput += `#define FS_ROOT file_${rootNode.varName}\n#define FS_NUMFILES ${orderedFileEntries.length + (hasRealRedirhome ? 0 : 1)}\n`;
         fs.writeFileSync(opts.outputFile, cOutput);
         console.log(`\n✨ Success! Output written to: ${opts.outputFile}`);
 
         return {
             originalSize: totalOriginalSize,
             compressedSize: totalCompressedSize,
-            filesCount: fileEntries.length
+            filesCount: orderedFileEntries.length
         };
     }
 
