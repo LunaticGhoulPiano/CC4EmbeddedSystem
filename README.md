@@ -67,7 +67,9 @@ CC4EmbeddedSystem
 │   ├── public
 │   │   └── index.html
 │   ├── Screenshot
-│   │   └── v3.1.9.png
+│   │   ├── inputs.png
+│   │   ├── output.png
+│   │   └── v3.1.10.png
 │   ├── package.json
 │   ├── package-lock.json
 │   └── tsconfig.json
