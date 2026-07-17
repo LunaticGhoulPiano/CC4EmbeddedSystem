@@ -1,6 +1,6 @@
 # [CC4EmbeddedSystem](https://github.com/LunaticGhoulPiano/CC4EmbeddedSystem)
 
-A modern, cross-platform tool to minify front-end web files (HTML/CSS/JS) and compile them into a single C array file (`fsdata.c`). 
+A modern, cross-platform tool to optimize front-end web files (HTML/CSS/JS/SVG) and compile them into a single C array file (`fsdata.c`). 
 
 It is designed specifically to optimize web servers running on resource-constrained embedded systems (like STM32) using the **lwIP TCP/IP stack**. By heavily compressing assets before flashing them into the MCU, it saves precious ROM/RAM space while keeping your web development workflow smooth.
 
@@ -10,7 +10,7 @@ It is designed specifically to optimize web servers running on resource-constrai
 
 This project has continuously evolved to drop heavy dependencies and embrace modern tech stacks:
 
-* **[V3 (Current & Recommended)](./V3/README.md):** A pure **TypeScript / Node.js** implementation. It features a beautiful web-based GUI, utilizes the state-of-the-art `html-minifier-next`, and completely replaces the old `makefsdata.exe` with a safe, cross-platform TypeScript logic. **(Zero C/Java/DLL dependencies!)**
+* **[V3 (Current & Recommended, v3.2.0)](./V3/README.md):** A pure **TypeScript / Node.js** implementation with browser GUI and headless CLI modes. It uses `html-minifier-next` for HTML/CSS/JS and SVGO for SVG optimization, remembers the last successful paths in the local application-data directory, and replaces `makefsdata.exe` with safe, cross-platform TypeScript logic. **(Zero C/Java/DLL dependencies!)**
 * **[V2 (Legacy)](./V2/README.md):** A Python + CustomTkinter desktop application. It wraps the legacy Java compressors and C executables into a standalone Windows GUI.
 * **[V1 (Legacy)](./V1/README.md):** The original Bare-metal PowerShell script workflow.
 
@@ -61,15 +61,21 @@ CC4EmbeddedSystem
 ├── V3
 │   ├── README.md
 │   ├── src
-│   │   ├── gui.ts
-│   │   ├── utils.ts
-│   │   └── makefsdata.ts
+│   │   ├── gui.ts            // CLI entry point
+│   │   ├── cli.ts            // Command-line parsing and help text
+│   │   ├── server.ts         // Express GUI server
+│   │   ├── config.ts         // Persistent last-build paths
+│   │   ├── minify-options.ts // Shared HTML minifier options
+│   │   ├── makefsdata.ts     // C generation and asset optimization
+│   │   └── utils.ts          // Package version lookup
 │   ├── public
 │   │   └── index.html
 │   ├── Screenshot
-│   │   ├── inputs.png
-│   │   ├── output.png
-│   │   └── v3.1.10.png
+│   │   ├── cli.png
+│   │   ├── src.png
+│   │   ├── dst.png
+│   │   ├── v3.2.0_result1.png
+│   │   └── v3.2.0_result2.png
 │   ├── package.json
 │   ├── package-lock.json
 │   └── tsconfig.json
