@@ -5,15 +5,15 @@
 - The config file is created only after the first successful build, and its complete path is printed at that time. Use `cc4es --config-path` to print it later.
 
 ## Demo
-- Select input directory
-
-![](./Screenshot/inputs.png)
-- Select output file path
-
-![](./Screenshot/output.png)
-- Result
-
-![](./Screenshot/v3.1.10.png)
+### CLI mode
+![](./Screenshot/cli.png)
+### Select input directory
+![](./Screenshot/src.png)
+### Select output file path
+![](./Screenshot/dst.png)
+### Results
+![](./Screenshot/v3.2.0_result1.png)
+![](./Screenshot/v3.2.0_result2.png)
 
 ## Structure
 ```text
@@ -37,6 +37,26 @@ CC4EmbeddedSystem/
 ├── package.json      // Project configuration & dependencies
 ├── package-lock.json // Project configuration & dependencies
 └── tsconfig.json     // TypeScript configuration
+```
+
+## Path Configs
+After the first successful build, CC4EmbeddedSystem saves the most recently used source and destination paths in `cc4es_configs.json`.
+
+The file is stored in the local application-data directory by default:
+- Windows: `%LOCALAPPDATA%\cc4-embedded-system\cc4es_configs.json`
+- macOS: `~/Library/Application Support/cc4-embedded-system/cc4es_configs.json`
+- Linux: `$XDG_STATE_HOME/cc4-embedded-system/cc4es_configs.json` (or `~/.local/state/...`)
+
+Run `cc4es --config-path` to print the exact path on the current computer.
+
+```json
+{
+  "schemaVersion": 1,
+  "lastBuild": {
+    "src": "C:\\YourProjects\\src",
+    "dst": "C:\\YourProjects\\dst\\fsdata.c"
+  }
+}
 ```
 
 ## Commands
