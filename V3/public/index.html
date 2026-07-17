@@ -64,7 +64,7 @@
     <div class="form-group">
         <label>Output File (fsdata.c)</label>
         <div class="input-row">
-            <input type="text" id="outputPath" placeholder="e.g., ./fsdata.c">
+            <input type="text" id="outputPath" value="fsdata.c" placeholder="e.g., ./fsdata.c">
             <button type="button" class="btn-browse" onclick="handleBrowse('outputPath', 'file')">Browse ...</button>
         </div>
     </div>
@@ -206,12 +206,24 @@
 
     window.addEventListener('DOMContentLoaded', async () => {
         await fetch('/api/cancel-shutdown', { method: 'POST' });
+
         try {
             const res = await fetch('/api/version');
             const data = await res.json();
             if (data.version) document.getElementById('app-title-text').innerText = `CC4EmbeddedSystem V3 (${data.version})`;
         }
         catch (error) { console.error('Can\'t get version!', error); }
+
+        try {
+            const res = await fetch('/api/config');
+            const data = await res.json();
+
+            if (data.lastBuild) {
+                document.getElementById('inputPath').value = data.lastBuild.src || '';
+                document.getElementById('outputPath').value = data.lastBuild.dst || '';
+            }
+        }
+        catch (error) { console.error('Can\'t load saved paths!', error); }
     });
 
     async function changePort() {

@@ -30,7 +30,8 @@
   "dependencies": {
     "express": "^5.2.1",
     "html-minifier-next": "^6.1.2",
-    "open": "^11.0.0"
+    "open": "^11.0.0",
+    "svgo": "^4.0.2"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

@@ -61,23 +61,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { minify } from 'html-minifier-next';
+import { optimize } from 'svgo';
 import { getPackageVersion } from './utils.js';
+import { DEFAULT_HTML_MINIFY_OPTIONS, HtmlMinifyOptions } from './minify-options.js';
 
 // ----------------------------------------------------------------------
 // 1. Configs & Version Recovery
 // ----------------------------------------------------------------------
 const TCP_MSS: number = 1460;
 const LWIP_VERSION: string = "1.3.1"; // this makefsdata.ts is based on lwIP v1.3.1
-
-// html-minifier-next options
-const COMPRESS_OPTS_DEFAULT = {
-    collapseWhitespace: true,
-    removeComments: true,
-    minifyJS: true,
-    minifyCSS: true,
-    processConditionalComments: true,
-    decodeEntities: true
-};
 
 export interface MakeFsDataOptions {
     inputDir: string;
@@ -87,7 +79,9 @@ export interface MakeFsDataOptions {
     useHttp11: boolean;
     supportSsi: boolean;
     precalcChksum: boolean;
-    minifyOpts?: any; // customize
+    minifyOpts?: HtmlMinifyOptions;
+    optimizeSvg?: boolean;
+    svgoMultipass?: boolean;
 }
 
 // ----------------------------------------------------------------------
@@ -137,6 +131,8 @@ function getMimeType(fileName: string): string {
             return 'text/xml';
         case '.json':
             return 'application/json';
+        case '.svg':
+            return 'image/svg+xml';
         default:
             return 'text/plain';
     }
@@ -236,13 +232,18 @@ export interface BuildStats {
 export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats> {
     console.log(`🚀 CC4EmbeddedSystem V3: Starting makefsdata compilation...`);
     
-    // checkers
+    // Check source directory before making any output directory changes.
     if (! fs.existsSync(opts.inputDir)) {
-        console.log(`⚠️ Input directory not found. Auto-creating directory: \n${opts.inputDir}`);
-        fs.mkdirSync(opts.inputDir, { recursive: true });
+        throw new Error(`Input directory not found: ${path.resolve(opts.inputDir)}`);
     }
 
-    if (!opts.outputFile.toLowerCase().endsWith('.c')) {
+    if (! fs.statSync(opts.inputDir).isDirectory()) throw new Error(`Input path is not a directory: ${path.resolve(opts.inputDir)}`);
+
+    if (fs.existsSync(opts.outputFile) && fs.statSync(opts.outputFile).isDirectory()) {
+        opts.outputFile = path.join(opts.outputFile, 'fsdata.c');
+        console.log(`🔧 Output directory selected. Using default file -> ${opts.outputFile}`);
+    }
+    else if (!opts.outputFile.toLowerCase().endsWith('.c')) {
         opts.outputFile += '.c';
         console.log(`🔧 Auto-appended '.c' to output file -> ${opts.outputFile}`);
     }
@@ -257,8 +258,7 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
 
     if (allFiles.length === 0) throw new Error(`Input directory is empty! Please put your web files (.html, .css, etc.) into:\n${path.resolve(opts.inputDir)}`);
 
-    // html-minifier-next options
-    const activeCompressOpts = opts.minifyOpts || COMPRESS_OPTS_DEFAULT;
+    const activeCompressOpts = opts.minifyOpts ?? DEFAULT_HTML_MINIFY_OPTIONS;
 
     for (let i = 0; i < allFiles.length; i++) {
         const filePath = allFiles[i]!;
@@ -269,7 +269,21 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         const originalFileSize = content.length;
         totalOriginalSize += originalFileSize;
 
-        if (['.html', '.htm', '.css', '.js'].includes(ext)) {
+        if (ext === '.svg' && opts.optimizeSvg !== false) {
+            try {
+                const optimizedSvg = optimize(content.toString('utf8'), {
+                    path: filePath,
+                    multipass: opts.svgoMultipass ?? false
+                });
+                content = Buffer.from(optimizedSvg.data, 'utf8');
+                console.log(`🖼️ Optimized SVG: ${relativePath} (${originalFileSize} -> ${content.length} bytes)`);
+            }
+            catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error);
+                throw new Error(`Failed to optimize SVG ${relativePath}: ${message}`);
+            }
+        }
+        else if (['.html', '.htm', '.css', '.js'].includes(ext)) {
             const minifiedStr = await minify(content.toString('utf8'), activeCompressOpts);
 
             if (typeof minifiedStr === 'string') {
