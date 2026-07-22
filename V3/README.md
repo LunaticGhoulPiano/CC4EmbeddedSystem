@@ -78,7 +78,7 @@ The following measured an example app build used `--gzip --gzip-level 9`. The ex
 | `fsdata.c` | 652,029 B | 197,764 B | 454,265 B (69.67%) |
 | `app.elf` | 2,641,144 B | 2,555,120 B | 86,024 B (3.26%) |
 | `app.hex` | 1,001,729 B | 751,917 B | 249,812 B (24.94%) |
-| `app.img` | 356,108 B | 267,292 B | 88,816 B (24.94%) |
+| `app.bin` | 356,108 B | 267,292 B | 88,816 B (24.94%) |
 
 The flashed memory regions show where the saving occurs:
 
