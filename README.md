@@ -10,7 +10,7 @@ It is designed specifically to optimize web servers running on resource-constrai
 
 This project has continuously evolved to drop heavy dependencies and embrace modern tech stacks:
 
-* **[V3 (Current & Recommended, v3.2.0)](./V3/README.md):** A pure **TypeScript / Node.js** implementation with browser GUI and headless CLI modes. It uses `html-minifier-next` for HTML/CSS/JS and SVGO for SVG optimization, remembers the last successful paths in the local application-data directory, and replaces `makefsdata.exe` with safe, cross-platform TypeScript logic. **(Zero C/Java/DLL dependencies!)**
+* **[V3 (Current & Recommended, v3.2.1)](./V3/README.md):** A pure **TypeScript / Node.js** implementation with browser GUI and headless CLI modes. It routes HTML to `html-minifier-next`, CSS to Lightning CSS, JavaScript to esbuild, and SVG to SVGO before generating lwIP `fsdata.c`. Optional deterministic gzip storage adds `Content-Encoding: gzip` only when an eligible text asset becomes smaller. It remembers the last successful paths and gzip options in local application data, and replaces `makefsdata.exe` with safe, cross-platform TypeScript logic. **(Zero C/Java/DLL dependencies!)**
 * **[V2 (Legacy)](./V2/README.md):** A Python + CustomTkinter desktop application. It wraps the legacy Java compressors and C executables into a standalone Windows GUI.
 * **[V1 (Legacy)](./V1/README.md):** The original Bare-metal PowerShell script workflow.
 
@@ -64,9 +64,10 @@ CC4EmbeddedSystem
 │   │   ├── gui.ts            // CLI entry point
 │   │   ├── cli.ts            // Command-line parsing and help text
 │   │   ├── server.ts         // Express GUI server
-│   │   ├── config.ts         // Persistent last-build paths
+│   │   ├── config.ts         // Persistent paths and gzip options
+│   │   ├── gzip-options.ts   // Shared gzip defaults and validation
 │   │   ├── minify-options.ts // Shared HTML minifier options
-│   │   ├── makefsdata.ts     // C generation and asset optimization
+│   │   ├── makefsdata.ts     // Asset routing, gzip, and C generation
 │   │   └── utils.ts          // Package version lookup
 │   ├── public
 │   │   └── index.html
@@ -76,6 +77,8 @@ CC4EmbeddedSystem
 │   │   ├── dst.png
 │   │   ├── v3.2.0_result1.png
 │   │   └── v3.2.0_result2.png
+│   ├── test
+│   │   └── cc4es.test.mjs    // Native Node.js regression tests
 │   ├── package.json
 │   ├── package-lock.json
 │   └── tsconfig.json

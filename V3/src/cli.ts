@@ -1,4 +1,5 @@
 import { DEFAULT_HTML_MINIFY_OPTIONS, HtmlMinifyOptions } from './minify-options.js';
+import { DEFAULT_GZIP_LEVEL, isGzipLevel } from './gzip-options.js';
 
 export class CliUsageError extends Error {
     public constructor(message: string) {
@@ -18,6 +19,8 @@ export interface CliArguments {
     minifyOpts: HtmlMinifyOptions;
     optimizeSvg: boolean;
     svgoMultipass: boolean;
+    gzip?: boolean;
+    gzipLevel?: number;
 }
 
 const MINIFY_FLAGS: Readonly<Record<string, keyof HtmlMinifyOptions>> = {
@@ -57,6 +60,15 @@ const parsePort = (value: string): number => {
     if (port < 1 || port > 65535) throw new CliUsageError('--port must be an integer from 1 to 65535.');
 
     return port;
+};
+
+const parseGzipLevel = (value: string): number => {
+    if (! /^\d+$/.test(value)) throw new CliUsageError('--gzip-level must be an integer from 1 to 9.');
+
+    const gzipLevel = Number.parseInt(value, 10);
+    if (! isGzipLevel(gzipLevel)) throw new CliUsageError('--gzip-level must be an integer from 1 to 9.');
+
+    return gzipLevel;
 };
 
 export const parseCliArguments = (args: readonly string[]): CliArguments => {
@@ -121,6 +133,20 @@ export const parseCliArguments = (args: readonly string[]): CliArguments => {
             case '--svgo-multipass':
                 parsed.svgoMultipass = true;
                 break;
+            case '--gzip':
+                parsed.gzip = true;
+                break;
+            case '--no-gzip':
+                parsed.gzip = false;
+                break;
+            case '--gzip-level': {
+                const value = args[index + 1];
+                if (! value || value.startsWith('--')) throw new CliUsageError('--gzip-level requires a value.');
+
+                parsed.gzipLevel = parseGzipLevel(value);
+                index++;
+                break;
+            }
             default:
                 throw new CliUsageError(`Unknown option: ${argument}`);
         }
@@ -156,6 +182,8 @@ export const getHelpText = (): string => {
         '  -p, --port <1-65535>               GUI server port',
         '  --[no-]optimize-svg                Enable or disable SVGO (default: enabled)',
         '  --svgo-multipass                   Run SVGO optimization repeatedly',
+        '  --[no-]gzip                        Enable or disable gzip resource storage (default: disabled)',
+        `  --gzip-level <1-9>                 gzip compression level (default: ${DEFAULT_GZIP_LEVEL})`,
         '',
         'HTML compression options:',
         '  --[no-]collapse-whitespace         --[no-]remove-comments',

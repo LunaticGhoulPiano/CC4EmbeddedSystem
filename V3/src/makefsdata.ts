@@ -60,8 +60,12 @@
 // modern ESM
 import fs from 'node:fs';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
+import { transform as transformJavaScript } from 'esbuild';
 import { minify } from 'html-minifier-next';
+import { transform as transformCss } from 'lightningcss';
 import { optimize } from 'svgo';
+import { DEFAULT_GZIP_LEVEL, isGzipLevel } from './gzip-options.js';
 import { getPackageVersion } from './utils.js';
 import { DEFAULT_HTML_MINIFY_OPTIONS, HtmlMinifyOptions } from './minify-options.js';
 
@@ -82,6 +86,8 @@ export interface MakeFsDataOptions {
     minifyOpts?: HtmlMinifyOptions;
     optimizeSvg?: boolean;
     svgoMultipass?: boolean;
+    gzip?: boolean;
+    gzipLevel?: number;
 }
 
 // ----------------------------------------------------------------------
@@ -93,9 +99,13 @@ interface FileEntry {
     varName: string; pathName: string; nameBuffer: Buffer;
     headerParts: HeaderPart[]; headerTotalBuffer: Buffer;
     contentBuffer: Buffer; chksums: ChksumBlock[];
+    rawContentLength: number; contentEncoding?: 'gzip'; compressionNote?: string;
 }
 
 const REDIRHOME_PATH = '/redirhome.html';
+const GZIP_CANDIDATE_EXTENSIONS = new Set([
+    '.html', '.htm', '.css', '.js', '.mjs', '.json', '.svg', '.xml', '.txt', '.map'
+]);
 
 // ----------------------------------------------------------------------
 // 3. lwIP Helpers
@@ -114,6 +124,7 @@ function getMimeType(fileName: string): string {
         case '.css':
             return 'text/css';
         case '.js':
+        case '.mjs':
             return 'application/javascript';
         case '.png':
             return 'image/png';
@@ -130,6 +141,7 @@ function getMimeType(fileName: string): string {
         case '.xml':
             return 'text/xml';
         case '.json':
+        case '.map':
             return 'application/json';
         case '.svg':
             return 'image/svg+xml';
@@ -153,7 +165,7 @@ function inetChksum(buf: Buffer): number {
     return (~sum) & 0xFFFF;
 }
 
-function generateHttpHeaders(fileName: string, dataLength: number, opts: MakeFsDataOptions): { parts: HeaderPart[], totalBuffer: Buffer } {
+function generateHttpHeaders(fileName: string, dataLength: number, opts: MakeFsDataOptions, contentEncoding?: 'gzip'): { parts: HeaderPart[], totalBuffer: Buffer } {
     const parts: HeaderPart[] = [];
     const ccVersion = getPackageVersion();
     const addPart = (str: string) => { parts.push({ str, buf: Buffer.from(str, 'ascii') }); };
@@ -183,21 +195,27 @@ function generateHttpHeaders(fileName: string, dataLength: number, opts: MakeFsD
         else addPart(`Connection: close\r\n`);
     }
 
-    addPart(`Content-type: ${getMimeType(fileName)}\r\n\r\n`);
+    if (contentEncoding === 'gzip') {
+        addPart(`Content-type: ${getMimeType(fileName)}\r\n`);
+        addPart('Content-Encoding: gzip\r\n');
+        addPart('\r\n');
+    }
+    else addPart(`Content-type: ${getMimeType(fileName)}\r\n\r\n`);
     
     return { parts, totalBuffer: Buffer.concat(parts.map(p => p.buf)) };
 }
 
-function getFilesRecursive(dir: string, processSubs: boolean): string[] {
+function getFilesRecursive(dir: string, processSubs: boolean, sortEntries: boolean): string[] {
     const results: string[] = [];
     if (! fs.existsSync(dir)) return results;
     const list: string[] = fs.readdirSync(dir);
+    if (sortEntries) list.sort();
     
     for (const file of list) {
         const fullPath: string = path.join(dir, file);
         const stat: fs.Stats = fs.statSync(fullPath);
         if (! stat.isDirectory()) results.push(fullPath);
-        else if (processSubs) results.push(...getFilesRecursive(fullPath, processSubs));
+        else if (processSubs) results.push(...getFilesRecursive(fullPath, processSubs, sortEntries));
     }
 
     return results;
@@ -225,8 +243,86 @@ function bufferToHexCArray(buf: Buffer): string {
 export interface BuildStats {
     originalSize: number;
     compressedSize: number;
+    storedSize: number;
     convertedSize: number;
     filesCount: number;
+    gzipFilesCount: number;
+}
+
+function gzipDeterministic(content: Buffer, gzipLevel: number): Buffer {
+    const compressed = gzipSync(content, { level: gzipLevel });
+
+    // RFC 1952 mtime and OS fields: avoid build-time and host-specific metadata.
+    compressed.fill(0, 4, 8);
+    compressed[9] = 0xff;
+    return compressed;
+}
+
+async function optimizeContent(filePath: string, relativePath: string, content: Buffer, minifyOpts: HtmlMinifyOptions, opts: MakeFsDataOptions): Promise<Buffer> {
+    const ext = path.extname(filePath).toLowerCase();
+
+    if (ext === '.svg' && opts.optimizeSvg !== false) {
+        try {
+            const optimizedSvg = optimize(content.toString('utf8'), {
+                path: filePath,
+                multipass: opts.svgoMultipass ?? false
+            });
+            const optimizedContent = Buffer.from(optimizedSvg.data, 'utf8');
+            console.log(`🖼️ Optimized SVG: ${relativePath} (${content.length} -> ${optimizedContent.length} bytes)`);
+            return optimizedContent;
+        }
+        catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`Failed to optimize SVG ${relativePath}: ${message}`);
+        }
+    }
+
+    if (['.html', '.htm'].includes(ext)) {
+        const minifiedHtml = await minify(content.toString('utf8'), minifyOpts);
+        if (typeof minifiedHtml === 'string') {
+            const optimizedContent = Buffer.from(minifiedHtml, 'utf8');
+            console.log(`📦 Minified HTML: ${relativePath} (${content.length} -> ${optimizedContent.length} bytes)`);
+            return optimizedContent;
+        }
+    }
+
+    if (ext === '.css' && minifyOpts.minifyCSS) {
+        try {
+            const optimizedCss = transformCss({
+                filename: filePath,
+                code: content,
+                minify: true
+            });
+            const optimizedContent = Buffer.from(optimizedCss.code);
+            console.log(`🎨 Minified CSS: ${relativePath} (${content.length} -> ${optimizedContent.length} bytes)`);
+            return optimizedContent;
+        }
+        catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`Failed to minify CSS ${relativePath}: ${message}`);
+        }
+    }
+
+    if (['.js', '.mjs'].includes(ext) && minifyOpts.minifyJS) {
+        try {
+            const optimizedJs = await transformJavaScript(content.toString('utf8'), {
+                loader: 'js',
+                minify: true,
+                legalComments: 'none',
+                sourcefile: filePath
+            });
+            const optimizedContent = Buffer.from(optimizedJs.code, 'utf8');
+            console.log(`📦 Minified JavaScript: ${relativePath} (${content.length} -> ${optimizedContent.length} bytes)`);
+            return optimizedContent;
+        }
+        catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`Failed to minify JavaScript ${relativePath}: ${message}`);
+        }
+    }
+
+    console.log(`📄 Copied: ${relativePath}`);
+    return content;
 }
 
 export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats> {
@@ -251,10 +347,16 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
     const outDir = path.dirname(opts.outputFile);
     if (! fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-    const allFiles = getFilesRecursive(opts.inputDir, opts.processSubs);
+    const gzipEnabled = opts.gzip ?? false;
+    const gzipLevel = opts.gzipLevel ?? DEFAULT_GZIP_LEVEL;
+    if (! isGzipLevel(gzipLevel)) throw new Error('gzipLevel must be an integer from 1 to 9.');
+
+    const allFiles = getFilesRecursive(opts.inputDir, opts.processSubs, gzipEnabled);
     const fileEntries: FileEntry[] = [];
     let totalOriginalSize = 0;
     let totalCompressedSize = 0;
+    let totalStoredSize = 0;
+    let gzipFilesCount = 0;
 
     if (allFiles.length === 0) throw new Error(`Input directory is empty! Please put your web files (.html, .css, etc.) into:\n${path.resolve(opts.inputDir)}`);
 
@@ -264,39 +366,36 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         const filePath = allFiles[i]!;
         const relativePath = '/' + path.relative(opts.inputDir, filePath).replace(/\\/g, '/');
         const ext = path.extname(filePath).toLowerCase();
-        let content = fs.readFileSync(filePath);
+        let content: Buffer = fs.readFileSync(filePath);
 
         const originalFileSize = content.length;
         totalOriginalSize += originalFileSize;
 
-        if (ext === '.svg' && opts.optimizeSvg !== false) {
-            try {
-                const optimizedSvg = optimize(content.toString('utf8'), {
-                    path: filePath,
-                    multipass: opts.svgoMultipass ?? false
-                });
-                content = Buffer.from(optimizedSvg.data, 'utf8');
-                console.log(`🖼️ Optimized SVG: ${relativePath} (${originalFileSize} -> ${content.length} bytes)`);
-            }
-            catch (error: unknown) {
-                const message = error instanceof Error ? error.message : String(error);
-                throw new Error(`Failed to optimize SVG ${relativePath}: ${message}`);
-            }
-        }
-        else if (['.html', '.htm', '.css', '.js'].includes(ext)) {
-            const minifiedStr = await minify(content.toString('utf8'), activeCompressOpts);
+        content = await optimizeContent(filePath, relativePath, content, activeCompressOpts, opts);
+        const rawContentLength = content.length;
+        totalCompressedSize += rawContentLength;
 
-            if (typeof minifiedStr === 'string') {
-                content = Buffer.from(minifiedStr, 'utf8');
-                console.log(`📦 Minified: ${relativePath} (${originalFileSize} -> ${content.length} bytes)`);
-            }
-        }
-        else console.log(`📄 Copied: ${relativePath}`);
+        let contentEncoding: 'gzip' | undefined;
+        let compressionNote: string | undefined;
+        if (gzipEnabled && GZIP_CANDIDATE_EXTENSIONS.has(ext)) {
+            const gzipContent = gzipDeterministic(content, gzipLevel);
+            if (gzipContent.length < content.length) {
+                content = gzipContent;
+                contentEncoding = 'gzip';
+                gzipFilesCount++;
 
-        totalCompressedSize += content.length;
+                const savedSize = rawContentLength - content.length;
+                const savedPercent = ((savedSize / rawContentLength) * 100).toFixed(1);
+                compressionNote = `gzip level ${gzipLevel}, original ${rawContentLength} B, stored ${content.length} B, saved ${savedSize} B (${savedPercent}%)`;
+            }
+            else compressionNote = `raw, original ${rawContentLength} B, gzip was not smaller`;
+        }
+        else if (gzipEnabled) compressionNote = 'raw, not a gzip candidate';
+
+        totalStoredSize += content.length;
 
         // generate header
-        const headerData = opts.includeHttpHeader ? generateHttpHeaders(filePath, content.length, opts) : { parts: [], totalBuffer: Buffer.alloc(0) };
+        const headerData = opts.includeHttpHeader ? generateHttpHeaders(filePath, content.length, opts, contentEncoding) : { parts: [], totalBuffer: Buffer.alloc(0) };
         const nameBuffer = Buffer.from(relativePath + '\0', 'utf8');
         const varName = relativePath.replace(/[^A-Za-z0-9]/g, '_');
 
@@ -316,7 +415,19 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
             }
         }
 
-        fileEntries.push({ varName, pathName: relativePath, nameBuffer, headerParts: headerData.parts, headerTotalBuffer: headerData.totalBuffer, contentBuffer: content, chksums });
+        const fileEntry: FileEntry = {
+            varName,
+            pathName: relativePath,
+            nameBuffer,
+            headerParts: headerData.parts,
+            headerTotalBuffer: headerData.totalBuffer,
+            contentBuffer: content,
+            chksums,
+            rawContentLength
+        };
+        if (contentEncoding) fileEntry.contentEncoding = contentEncoding;
+        if (compressionNote) fileEntry.compressionNote = compressionNote;
+        fileEntries.push(fileEntry);
     }
 
     // find real redirhome.html
@@ -348,6 +459,7 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
 
     // generate data arrays
     for (const file of orderedFileEntries) {
+        if (file.compressionNote) cOutput += `/* ${file.pathName}: ${file.compressionNote} */\n`;
         cOutput += `static const unsigned int dummy_align_${file.varName} = 0;\n`;
         cOutput += `static const unsigned char data_${file.varName}[] = {\n`;
         cOutput += `\t/* ${file.pathName} (${file.nameBuffer.length} chars) */\n`;
@@ -363,7 +475,8 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
             }
         }
         
-        cOutput += `\n\t/* raw file data (${file.contentBuffer.length} bytes) */\n`;
+        const contentDescription = file.contentEncoding === 'gzip' ? 'gzip file data' : 'raw file data';
+        cOutput += `\n\t/* ${contentDescription} (${file.contentBuffer.length} bytes) */\n`;
         cOutput += bufferToHexCArray(file.contentBuffer);
         cOutput += `};\n\n\n\n`;
     }
@@ -411,8 +524,10 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         return {
             originalSize: totalOriginalSize,
             compressedSize: totalCompressedSize,
+            storedSize: totalStoredSize,
             convertedSize: convertedSize,
-            filesCount: orderedFileEntries.length
+            filesCount: orderedFileEntries.length,
+            gzipFilesCount
         };
     }
 

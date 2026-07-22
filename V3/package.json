@@ -1,6 +1,6 @@
 {
   "name": "cc4-embedded-system",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "A modern typescript version of makefsdata based on html-minifier-next and lwIP v1.3.1",
   "bin": {
     "cc4es": "dist/gui.js"
@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsx src/gui.ts",
     "build": "tsc && xcopy /E /I /Y public dist\\public",
+    "test": "tsc && node --test",
     "prepublishOnly": "npm run build"
   },
   "files": [
@@ -28,8 +29,10 @@
   "author": "LunaticGhoulPiano",
   "license": "MIT",
   "dependencies": {
+    "esbuild": "^0.27.7",
     "express": "^5.2.1",
     "html-minifier-next": "^6.1.2",
+    "lightningcss": "^1.32.0",
     "open": "^11.0.0",
     "svgo": "^4.0.2"
   },

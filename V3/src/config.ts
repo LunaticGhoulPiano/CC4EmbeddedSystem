@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { GzipBuildOptions, isGzipLevel } from './gzip-options.js';
 
 export const CONFIG_FILE_NAME = 'cc4es_configs.json';
 
@@ -12,6 +13,7 @@ export interface LastBuildPaths {
 interface AppConfig {
     schemaVersion: number;
     lastBuild?: LastBuildPaths;
+    gzipOptions?: GzipBuildOptions;
 }
 
 const getStateDirectory = (): string => {
@@ -36,25 +38,39 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
     return typeof value === 'object' && value !== null;
 };
 
+const getGzipOptions = (value: unknown): GzipBuildOptions | undefined => {
+    if (! isRecord(value)) return undefined;
+
+    const gzip = value.gzip;
+    const gzipLevel = value.gzipLevel;
+    if (typeof gzip !== 'boolean' || ! isGzipLevel(gzipLevel)) return undefined;
+
+    return { gzip, gzipLevel };
+};
+
 const readConfig = (): AppConfig => {
     try {
         const parsedConfig: unknown = JSON.parse(fs.readFileSync(getConfigFilePath(), 'utf8'));
-        if (! isRecord(parsedConfig) || ! isRecord(parsedConfig.lastBuild)) return { schemaVersion: 1 };
+        if (! isRecord(parsedConfig)) return { schemaVersion: 2 };
+
+        const config: AppConfig = { schemaVersion: 2 };
+        const gzipOptions = getGzipOptions(parsedConfig.gzipOptions);
+        if (gzipOptions) config.gzipOptions = gzipOptions;
+
+        if (! isRecord(parsedConfig.lastBuild)) return config;
 
         const src = parsedConfig.lastBuild.src;
         const dst = parsedConfig.lastBuild.dst;
 
         if (typeof src !== 'string' || typeof dst !== 'string' || ! src || ! dst) {
-            return { schemaVersion: 1 };
+            return config;
         }
 
-        return {
-            schemaVersion: 1,
-            lastBuild: { src, dst }
-        };
+        config.lastBuild = { src, dst };
+        return config;
     }
     catch {
-        return { schemaVersion: 1 };
+        return { schemaVersion: 2 };
     }
 };
 
@@ -62,14 +78,19 @@ export const getLastBuildPaths = (): LastBuildPaths | undefined => {
     return readConfig().lastBuild;
 };
 
-export const saveLastBuildPaths = (src: string, dst: string): boolean => {
+export const getLastGzipOptions = (): GzipBuildOptions | undefined => {
+    return readConfig().gzipOptions;
+};
+
+export const saveLastBuildPaths = (src: string, dst: string, gzipOptions?: GzipBuildOptions): boolean => {
     const configFilePath = getConfigFilePath();
     const temporaryFilePath = `${configFilePath}.${process.pid}.tmp`;
     const configAlreadyExists = fs.existsSync(configFilePath);
     const config: AppConfig = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         lastBuild: { src, dst }
     };
+    if (gzipOptions) config.gzipOptions = gzipOptions;
 
     try {
         fs.mkdirSync(path.dirname(configFilePath), { recursive: true });
