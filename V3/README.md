@@ -1,5 +1,6 @@
 # CC4EmbeddedSystem V3
-- V3.2.1 is a TypeScript/Node.js rewrite of [lwIP makefsdata](https://github.com/m-labs/lwip/tree/master/src/apps/httpd/makefsdata). GUI mode runs on localhost, default port: `3000`.
+- V3 is a TypeScript/Node.js rewrite of [lwIP makefsdata](https://github.com/m-labs/lwip/tree/master/src/apps/httpd/makefsdata). GUI mode runs on localhost, default port: `3000`.
+- Requires Node.js 22.13.0 or newer. Use the latest patched LTS for builds.
 - Assets are handled by type: [html-minifier-next](https://github.com/j9t/html-minifier-next) processes HTML, [Lightning CSS](https://lightningcss.dev/) processes CSS, [esbuild](https://esbuild.github.io/) processes JavaScript, and [SVGO](https://svgo.dev/) processes SVG.
 - Optional deterministic gzip storage reduces the Flash payload for text assets. The MCU sends the stored bytes unchanged; a gzip-capable HTTP client, normally a browser, decompresses the response.
 - This tool is deployed on [npm package](https://www.npmjs.com/package/cc4-embedded-system).
@@ -60,6 +61,15 @@ source file
 ```
 
 HTML-only options such as `--remove-comments` are not applied to external JavaScript. This prevents an external `.js` file from being interpreted as an HTML comment. `--no-minify-js` and `--no-minify-css` keep their respective external assets unchanged, while HTML can still use its own minification options.
+
+### Legacy firmware compatibility
+
+Some lwIP firmware links its own file list to the generated C symbol `file__redirhome_html`. Its position depends on whether the source directory contains `/redirhome.html`.
+
+| Source directory | Generated file list |
+|---|---|
+| Contains `/redirhome.html` | `FS_ROOT` points to `file__redirhome_html`. This node serves the supplied page and links to the remaining assets. |
+| Omits `/redirhome.html` | The last asset links to `file__redirhome_html`. This final node has an empty name, a zero-byte payload and `next == NULL`. A lookup for `/redirhome.html` finds no page. |
 
 ### Gzip storage
 
@@ -186,6 +196,7 @@ destination is saved, fsdata.c is created in the current working directory.
     cc4es --headless --src C:\Project\web --dst C:\Project\fsdata.c --gzip --gzip-level 9
     ```
   A gzip-enabled image stores one fixed gzip representation for eligible resources. It does not keep a raw duplicate or negotiate `Accept-Encoding`; use `--no-gzip` when a consumer requires non-gzip clients. Test it with a browser or `curl --compressed http://DEVICE_IP/app.js`.
+- The legacy `--[no-]conditional-comments` flags are accepted for compatibility. HTML comment removal follows `--[no-]remove-comments`.
 - Files are processed by type: HTML uses html-minifier-next, CSS uses Lightning CSS, JavaScript uses esbuild, and SVG uses SVGO. `--no-minify-js` and `--no-minify-css` preserve their respective external assets.
 - Update
   ```bash
@@ -206,14 +217,28 @@ npm run build
 npm link
 cc4es
 
-# headless development test
-npm run dev -- --headless --src C:\Project\web --dst C:\Project\fsdata.c
-
-# publish
-npm whoami # verify
-npm login
-npm version patch --no-git-tag-version # if increase version
-npm run dev # dev mode for testing
-npm run build # build the newest
-npm publish --access public
+# run the checked-out source directly
+npm run dev -- --headless --src "C:/Project/web" --dst "C:/Project/fsdata.c"
 ```
+
+### Publish a patch to npm
+
+Run these commands in the `V3` directory on Windows. The build uses `xcopy` to include the GUI assets. Use an npm account with publish access to `cc4-embedded-system`.
+
+```bash
+npm whoami  # run npm login if needed
+npm view cc4-embedded-system dist-tags.latest
+npm test
+npm version patch --no-git-tag-version
+npm run build
+npm pack --dry-run
+```
+
+The version command updates `package.json` and `package-lock.json` without creating a Git commit or tag. Check the package name and version in the preview and confirm it lists `dist/gui.js`, `dist/makefsdata.js` and `dist/public/index.html`.
+
+```bash
+npm publish --access public
+npm view cc4-embedded-system dist-tags.latest
+```
+
+Publishing runs the build again through `prepublishOnly`. Complete the npm authentication prompt and confirm the registry reports the version you just published.

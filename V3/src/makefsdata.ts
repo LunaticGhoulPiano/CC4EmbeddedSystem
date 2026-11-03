@@ -278,7 +278,9 @@ async function optimizeContent(filePath: string, relativePath: string, content: 
     }
 
     if (['.html', '.htm'].includes(ext)) {
-        const minifiedHtml = await minify(content.toString('utf8'), minifyOpts);
+        // Older CC4ES callers may pass this flag. html-minifier-next 6 ignored it.
+        const { processConditionalComments: _legacyFlag, ...htmlOptions } = minifyOpts;
+        const minifiedHtml = await minify(content.toString('utf8'), htmlOptions);
         if (typeof minifiedHtml === 'string') {
             const optimizedContent = Buffer.from(minifiedHtml, 'utf8');
             console.log(`📦 Minified HTML: ${relativePath} (${content.length} -> ${optimizedContent.length} bytes)`);
@@ -481,15 +483,15 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         cOutput += `};\n\n\n\n`;
     }
 
-    // if no real redirhome.html, generate empty arrays
+    // Legacy firmware links to this node even when the page is absent.
     if (! hasRealRedirhome) {
-        cOutput += `/* --- Empty arrays --- */\n`;
-        cOutput += `static const unsigned char data__redirhome_html[] = {};\n`;
+        cOutput += `/* Legacy end of the file list: empty name, no payload. */\n`;
+        cOutput += `static const unsigned char data__redirhome_html[] = { 0 };\n`;
         cOutput += `const struct fsdata_file file__redirhome_html[] = { {\n`;
         cOutput += `\tfile_NULL,\n`;
         cOutput += `\tdata__redirhome_html,\n`;
-        cOutput += `\tdata__redirhome_html + 16,\n`;
-        cOutput += `\tsizeof(data__redirhome_html) - 16,\n`;
+        cOutput += `\tdata__redirhome_html,\n`;
+        cOutput += `\t0,\n`;
         cOutput += `\t1,\n`;
 
         if (opts.precalcChksum) cOutput += `#if HTTPD_PRECALCULATED_CHECKSUM\n\t0, NULL,\n#endif /* HTTPD_PRECALCULATED_CHECKSUM */\n`;

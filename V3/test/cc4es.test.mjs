@@ -151,3 +151,29 @@ test('CSS uses a CSS minifier instead of the HTML minifier', async (t) => {
     assert.doesNotMatch(response.body.toString('utf8'), /removable comment/);
     assert.match(response.body.toString('utf8'), /body\{color:red\}/);
 });
+
+test('redirhome keeps its legacy link target with and without a real page', async (t) => {
+    const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'cc4es-redirhome-'));
+    t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+
+    const input = path.join(temporaryDirectory, 'input');
+    const output = path.join(temporaryDirectory, 'fsdata.c');
+    fs.mkdirSync(input);
+    fs.writeFileSync(path.join(input, 'index.html'), '<p>Home</p>');
+
+    const options = createBuildOptions(input, output, { precalcChksum: true });
+    await runMakeFsData(options);
+    const absent = fs.readFileSync(output, 'utf8');
+    assert.match(absent, /static const unsigned char data__redirhome_html\[\] = \{\s*0\s*};/);
+    assert.match(absent, /const struct fsdata_file file__redirhome_html\[\] = \{ \{\s*file_NULL,\s*data__redirhome_html,\s*data__redirhome_html,\s*0,\s*1,\s*#if HTTPD_PRECALCULATED_CHECKSUM\s*0, NULL,/);
+    assert.match(absent, /file__index_html\[\] = \{ \{\s*file__redirhome_html,/);
+    assert.match(absent, /#define FS_ROOT file__index_html\n#define FS_NUMFILES 2\b/);
+
+    fs.writeFileSync(path.join(input, 'redirhome.html'), '<p>Restart</p>');
+    await runMakeFsData(options);
+    const present = fs.readFileSync(output, 'utf8');
+    assert.match(present, /#define FS_ROOT file__redirhome_html\n#define FS_NUMFILES 2\b/);
+    assert.match(present, /file__redirhome_html\[\] = \{ \{\s*file__index_html,/);
+    assert.match(present, /file__index_html\[\] = \{ \{\s*file_NULL,/);
+    assert.match(extractResponse(output, '_redirhome_html').body.toString('utf8'), /Restart/);
+});
