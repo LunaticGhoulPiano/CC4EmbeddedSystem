@@ -165,9 +165,8 @@ function inetChksum(buf: Buffer): number {
     return (~sum) & 0xFFFF;
 }
 
-function generateHttpHeaders(fileName: string, dataLength: number, opts: MakeFsDataOptions, contentEncoding?: 'gzip'): { parts: HeaderPart[], totalBuffer: Buffer } {
+function generateHttpHeaders(fileName: string, dataLength: number, opts: MakeFsDataOptions, ccVersion: string, contentEncoding?: 'gzip'): { parts: HeaderPart[], totalBuffer: Buffer } {
     const parts: HeaderPart[] = [];
-    const ccVersion = getPackageVersion();
     const addPart = (str: string) => { parts.push({ str, buf: Buffer.from(str, 'ascii') }); };
 
     const baseName: string = path.basename(fileName);
@@ -346,14 +345,33 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         console.log(`🔧 Auto-appended '.c' to output file -> ${opts.outputFile}`);
     }
 
-    const outDir = path.dirname(opts.outputFile);
-    if (! fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-
     const gzipEnabled = opts.gzip ?? false;
     const gzipLevel = opts.gzipLevel ?? DEFAULT_GZIP_LEVEL;
     if (! isGzipLevel(gzipLevel)) throw new Error('gzipLevel must be an integer from 1 to 9.');
 
-    const allFiles = getFilesRecursive(opts.inputDir, opts.processSubs, gzipEnabled);
+    // Resolve existing paths so a previous output is excluded through aliases too.
+    const existingOutputPath = fs.existsSync(opts.outputFile) ? fs.realpathSync(opts.outputFile) : undefined;
+    const allFiles = getFilesRecursive(opts.inputDir, opts.processSubs, gzipEnabled).filter(filePath => {
+        return existingOutputPath === undefined || path.relative(fs.realpathSync(filePath), existingOutputPath) !== '';
+    });
+    const symbolPaths = new Map<string, string>();
+    const inputFiles = allFiles.map(filePath => {
+        const relativePath = '/' + path.relative(opts.inputDir, filePath).replace(/\\/g, '/');
+        const varName = relativePath.replace(/[^A-Za-z0-9]/g, '_');
+        const previousPath = symbolPaths.get(varName);
+        if (previousPath !== undefined) {
+            throw new Error(`C symbol collision: ${previousPath} and ${relativePath} both generate file_${varName}. Rename one of the source paths.`);
+        }
+        symbolPaths.set(varName, relativePath);
+        return { filePath, relativePath, varName };
+    });
+
+    const hasRedirhomePage = inputFiles.some(file => file.relativePath.toLowerCase() === REDIRHOME_PATH);
+    const legacySymbolPath = symbolPaths.get('_redirhome_html');
+    if (! hasRedirhomePage && legacySymbolPath !== undefined) {
+        throw new Error(`C symbol collision: ${legacySymbolPath} generates the reserved legacy symbol file__redirhome_html. Rename the source path.`);
+    }
+
     const fileEntries: FileEntry[] = [];
     let totalOriginalSize = 0;
     let totalCompressedSize = 0;
@@ -363,10 +381,9 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
     if (allFiles.length === 0) throw new Error(`Input directory is empty! Please put your web files (.html, .css, etc.) into:\n${path.resolve(opts.inputDir)}`);
 
     const activeCompressOpts = opts.minifyOpts ?? DEFAULT_HTML_MINIFY_OPTIONS;
+    const ccVersion = opts.includeHttpHeader ? getPackageVersion() : '';
 
-    for (let i = 0; i < allFiles.length; i++) {
-        const filePath = allFiles[i]!;
-        const relativePath = '/' + path.relative(opts.inputDir, filePath).replace(/\\/g, '/');
+    for (const { filePath, relativePath, varName } of inputFiles) {
         const ext = path.extname(filePath).toLowerCase();
         let content: Buffer = fs.readFileSync(filePath);
 
@@ -397,9 +414,8 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         totalStoredSize += content.length;
 
         // generate header
-        const headerData = opts.includeHttpHeader ? generateHttpHeaders(filePath, content.length, opts, contentEncoding) : { parts: [], totalBuffer: Buffer.alloc(0) };
+        const headerData = opts.includeHttpHeader ? generateHttpHeaders(filePath, content.length, opts, ccVersion, contentEncoding) : { parts: [], totalBuffer: Buffer.alloc(0) };
         const nameBuffer = Buffer.from(relativePath + '\0', 'utf8');
-        const varName = relativePath.replace(/[^A-Za-z0-9]/g, '_');
 
         const chksums: ChksumBlock[] = [];
         if (opts.precalcChksum) {
@@ -519,6 +535,8 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
     const rootNode = orderedFileEntries[0];
     if (rootNode) {
         cOutput += `#define FS_ROOT file_${rootNode.varName}\n#define FS_NUMFILES ${orderedFileEntries.length + (hasRealRedirhome ? 0 : 1)}\n`;
+        const outDir = path.dirname(opts.outputFile);
+        if (! fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
         fs.writeFileSync(opts.outputFile, cOutput);
         const convertedSize = fs.statSync(opts.outputFile).size;
         console.log(`\n✨ Success! Output written to: ${opts.outputFile}`);

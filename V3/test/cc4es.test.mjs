@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
 import { CliUsageError, getHelpText, parseCliArguments } from '../dist/cli.js';
@@ -176,4 +177,99 @@ test('redirhome keeps its legacy link target with and without a real page', asyn
     assert.match(present, /file__redirhome_html\[\] = \{ \{\s*file__index_html,/);
     assert.match(present, /file__index_html\[\] = \{ \{\s*file_NULL,/);
     assert.match(extractResponse(output, '_redirhome_html').body.toString('utf8'), /Restart/);
+});
+
+test('rebuilding inside the source directory excludes the previous output', async (t) => {
+    const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'cc4es-output-exclusion-'));
+    t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+    const content = Buffer.from('Source content stays the same. '.repeat(100));
+
+    for (const gzip of [false, true]) {
+        const inputDirectory = path.join(temporaryDirectory, gzip ? 'gzip' : 'raw');
+        fs.mkdirSync(inputDirectory);
+        fs.writeFileSync(path.join(inputDirectory, 'page.txt'), content);
+
+        // Exercise both an output directory and an auto-appended .c suffix.
+        const destination = gzip ? path.join(inputDirectory, 'generated', 'fsdata') : inputDirectory;
+        const options = createBuildOptions(inputDirectory, destination, { gzip });
+        const firstStats = await runMakeFsData(options);
+        const firstOutput = fs.readFileSync(options.outputFile);
+        const secondStats = await runMakeFsData(options);
+
+        assert.equal(firstStats.filesCount, 1);
+        assert.equal(firstStats.originalSize, content.length);
+        assert.deepEqual(secondStats, firstStats);
+        assert.deepEqual(fs.readFileSync(options.outputFile), firstOutput);
+        const response = extractResponse(options.outputFile, '_page_txt');
+        assert.deepEqual(gzip ? gunzipSync(response.body) : response.body, content);
+    }
+});
+
+test('symbol collisions fail before replacing the output or creating directories', async (t) => {
+    const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'cc4es-symbol-collision-'));
+    t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+    const cases = [
+        ['a-b.js', 'a_b.js'],
+        ['a/b.js', 'a_b.js'],
+        ['redirhome_html'],
+        ['redirhome.html', 'redirhome_html']
+    ];
+
+    for (const [index, names] of cases.entries()) {
+        const inputDirectory = path.join(temporaryDirectory, String(index));
+        for (const name of names) {
+            const filePath = path.join(inputDirectory, name);
+            fs.mkdirSync(path.dirname(filePath), { recursive: true });
+            fs.writeFileSync(filePath, 'Original source');
+        }
+
+        const existingOutput = path.join(temporaryDirectory, `${index}.c`);
+        const previousOutput = 'Previously generated output';
+        fs.writeFileSync(existingOutput, previousOutput);
+        const validateError = (error) => {
+            assert.match(error.message, /C symbol collision:/);
+            for (const name of names) assert.ok(error.message.includes(`/${name}`));
+            return true;
+        };
+        await assert.rejects(runMakeFsData(createBuildOptions(inputDirectory, existingOutput)), validateError);
+        assert.equal(fs.readFileSync(existingOutput, 'utf8'), previousOutput);
+
+        const newOutputDirectory = path.join(temporaryDirectory, `not-created-${index}`);
+        await assert.rejects(
+            runMakeFsData(createBuildOptions(inputDirectory, path.join(newOutputDirectory, 'fsdata.c'))),
+            validateError
+        );
+        assert.equal(fs.existsSync(newOutputDirectory), false);
+        for (const name of names) assert.equal(fs.readFileSync(path.join(inputDirectory, name), 'utf8'), 'Original source');
+    }
+});
+
+test('a build reads the package version once for all HTTP headers', async (t) => {
+    const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'cc4es-version-read-'));
+    t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+    const inputDirectory = path.join(temporaryDirectory, 'input');
+    const outputFile = path.join(temporaryDirectory, 'fsdata.c');
+    fs.mkdirSync(inputDirectory);
+    for (const name of ['a', 'b', 'c']) fs.writeFileSync(path.join(inputDirectory, `${name}.txt`), name);
+
+    const packagePath = fileURLToPath(new URL('../package.json', import.meta.url));
+    const version = JSON.parse(fs.readFileSync(packagePath, 'utf8')).version;
+    const readFileSync = fs.readFileSync;
+    let versionReads = 0;
+    t.mock.method(fs, 'readFileSync', (filePath, ...args) => {
+        if (typeof filePath === 'string' && path.relative(filePath, packagePath) === '') versionReads++;
+        return readFileSync(filePath, ...args);
+    });
+
+    await runMakeFsData(createBuildOptions(inputDirectory, outputFile));
+    assert.equal(versionReads, 1);
+    assert.equal(fs.readFileSync(outputFile, 'utf8').split(`CC4EmbeddedSystem V3 (${version})`).length - 1, 3);
+    for (const name of ['a', 'b', 'c']) {
+        const response = extractResponse(outputFile, `_${name}_txt`);
+        assert.equal(response.header, 'HTTP/1.0 200 OK\r\nContent-type: text/plain\r\n\r\n');
+        assert.equal(response.body.toString('utf8'), name);
+    }
+
+    await runMakeFsData(createBuildOptions(inputDirectory, outputFile, { includeHttpHeader: false }));
+    assert.equal(versionReads, 1, 'A headerless build must not read the version');
 });
