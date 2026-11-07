@@ -15,7 +15,8 @@
   "files": [
     "dist/",
     "package.json",
-    "README.md"
+    "README.md",
+    "licenses/"
   ],
   "keywords": [
     "lwip",

@@ -6,8 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import open from 'open';
-import { getLastBuildPaths, getLastGzipOptions, saveLastBuildPaths } from './config.js';
-import { DEFAULT_GZIP_LEVEL, GzipBuildOptions, isGzipLevel } from './gzip-options.js';
+import { getLastBuildPaths, getLastGzipOptions, getLastCompressionOptions, saveLastBuildPaths } from './config.js';
+import { DEFAULT_GZIP_LEVEL } from './gzip-options.js';
+import { DEFAULT_COMPRESSION_SETTINGS, resolveCompressionOptions, type CompressionSettings } from './compression/options.js';
 import { runMakeFsData, MakeFsDataOptions } from './makefsdata.js';
 import { normalizeHtmlMinifyOptions } from './minify-options.js';
 import { getPackageVersion } from './utils.js';
@@ -53,21 +54,6 @@ const buildWindowsDialogScript = (dialogLines: readonly string[]): string => {
 
 const isNonEmptyString = (value: unknown): value is string => {
     return typeof value === 'string' && value.trim().length > 0;
-};
-
-const getGzipOptionsFromRequest = (value: unknown): GzipBuildOptions => {
-    if (typeof value !== 'object' || value === null) {
-        return { gzip: false, gzipLevel: DEFAULT_GZIP_LEVEL };
-    }
-
-    const requestOptions = value as Record<string, unknown>;
-    const gzip = requestOptions.gzip ?? false;
-    const gzipLevel = requestOptions.gzipLevel ?? DEFAULT_GZIP_LEVEL;
-
-    if (typeof gzip !== 'boolean') throw new Error('gzip must be a boolean.');
-    if (! isGzipLevel(gzipLevel)) throw new Error('gzip level must be an integer from 1 to 9.');
-
-    return { gzip, gzipLevel };
 };
 
 export const startGuiServer = (initialPort: number): void => {
@@ -163,7 +149,8 @@ export const startGuiServer = (initialPort: number): void => {
         cancelShutdown();
         res.json({
             lastBuild: getLastBuildPaths() ?? null,
-            gzipOptions: getLastGzipOptions() ?? { gzip: false, gzipLevel: DEFAULT_GZIP_LEVEL }
+            gzipOptions: getLastGzipOptions() ?? { gzip: false, gzipLevel: DEFAULT_GZIP_LEVEL },
+            compressionOptions: getLastCompressionOptions() ?? DEFAULT_COMPRESSION_SETTINGS
         });
     });
 
@@ -188,9 +175,9 @@ export const startGuiServer = (initialPort: number): void => {
             return;
         }
 
-        let gzipOptions: GzipBuildOptions;
+        let compressionOptions: CompressionSettings;
         try {
-            gzipOptions = getGzipOptionsFromRequest(req.body);
+            compressionOptions = resolveCompressionOptions(req.body);
         }
         catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
@@ -209,7 +196,7 @@ export const startGuiServer = (initialPort: number): void => {
             minifyOpts: normalizeHtmlMinifyOptions(req.body.minifyOpts),
             optimizeSvg: true,
             svgoMultipass: false,
-            ...gzipOptions
+            ...compressionOptions
         };
 
         console.log(`[Build] Input: ${opts.inputDir}`);
@@ -217,7 +204,7 @@ export const startGuiServer = (initialPort: number): void => {
 
         try {
             const stats = await runMakeFsData(opts);
-            saveLastBuildPaths(opts.inputDir, opts.outputFile, gzipOptions);
+            saveLastBuildPaths(opts.inputDir, opts.outputFile, compressionOptions);
 
             try {
                 await open(path.dirname(opts.outputFile));

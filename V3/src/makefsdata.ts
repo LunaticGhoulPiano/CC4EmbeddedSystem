@@ -60,12 +60,11 @@
 // modern ESM
 import fs from 'node:fs';
 import path from 'node:path';
-import { gzipSync } from 'node:zlib';
 import { transform as transformJavaScript } from 'esbuild';
 import { minify } from 'html-minifier-next';
 import { transform as transformCss } from 'lightningcss';
 import { optimize } from 'svgo';
-import { DEFAULT_GZIP_LEVEL, isGzipLevel } from './gzip-options.js';
+import { createCompressor, storeContent, type CompressionOptions, type ContentEncoding } from './compression/index.js';
 import { getPackageVersion } from './utils.js';
 import { DEFAULT_HTML_MINIFY_OPTIONS, HtmlMinifyOptions } from './minify-options.js';
 
@@ -75,7 +74,7 @@ import { DEFAULT_HTML_MINIFY_OPTIONS, HtmlMinifyOptions } from './minify-options
 const TCP_MSS: number = 1460;
 const LWIP_VERSION: string = "1.3.1"; // this makefsdata.ts is based on lwIP v1.3.1
 
-export interface MakeFsDataOptions {
+export interface MakeFsDataOptions extends CompressionOptions {
     inputDir: string;
     outputFile: string;
     processSubs: boolean;
@@ -86,8 +85,6 @@ export interface MakeFsDataOptions {
     minifyOpts?: HtmlMinifyOptions;
     optimizeSvg?: boolean;
     svgoMultipass?: boolean;
-    gzip?: boolean;
-    gzipLevel?: number;
 }
 
 // ----------------------------------------------------------------------
@@ -99,13 +96,10 @@ interface FileEntry {
     varName: string; pathName: string; nameBuffer: Buffer;
     headerParts: HeaderPart[]; headerTotalBuffer: Buffer;
     contentBuffer: Buffer; chksums: ChksumBlock[];
-    rawContentLength: number; contentEncoding?: 'gzip'; compressionNote?: string;
+    rawContentLength: number; contentEncoding?: ContentEncoding; compressionNote?: string;
 }
 
 const REDIRHOME_PATH = '/redirhome.html';
-const GZIP_CANDIDATE_EXTENSIONS = new Set([
-    '.html', '.htm', '.css', '.js', '.mjs', '.json', '.svg', '.xml', '.txt', '.map'
-]);
 
 // ----------------------------------------------------------------------
 // 3. lwIP Helpers
@@ -165,7 +159,7 @@ function inetChksum(buf: Buffer): number {
     return (~sum) & 0xFFFF;
 }
 
-function generateHttpHeaders(fileName: string, dataLength: number, opts: MakeFsDataOptions, ccVersion: string, contentEncoding?: 'gzip'): { parts: HeaderPart[], totalBuffer: Buffer } {
+function generateHttpHeaders(fileName: string, dataLength: number, opts: MakeFsDataOptions, ccVersion: string, contentEncoding?: ContentEncoding): { parts: HeaderPart[], totalBuffer: Buffer } {
     const parts: HeaderPart[] = [];
     const addPart = (str: string) => { parts.push({ str, buf: Buffer.from(str, 'ascii') }); };
 
@@ -194,9 +188,9 @@ function generateHttpHeaders(fileName: string, dataLength: number, opts: MakeFsD
         else addPart(`Connection: close\r\n`);
     }
 
-    if (contentEncoding === 'gzip') {
+    if (contentEncoding) {
         addPart(`Content-type: ${getMimeType(fileName)}\r\n`);
-        addPart('Content-Encoding: gzip\r\n');
+        addPart(`Content-Encoding: ${contentEncoding}\r\n`);
         addPart('\r\n');
     }
     else addPart(`Content-type: ${getMimeType(fileName)}\r\n\r\n`);
@@ -246,15 +240,8 @@ export interface BuildStats {
     convertedSize: number;
     filesCount: number;
     gzipFilesCount: number;
-}
-
-function gzipDeterministic(content: Buffer, gzipLevel: number): Buffer {
-    const compressed = gzipSync(content, { level: gzipLevel });
-
-    // RFC 1952 mtime and OS fields: avoid build-time and host-specific metadata.
-    compressed.fill(0, 4, 8);
-    compressed[9] = 0xff;
-    return compressed;
+    encodedFilesCount: number;
+    brotliFilesCount: number;
 }
 
 async function optimizeContent(filePath: string, relativePath: string, content: Buffer, minifyOpts: HtmlMinifyOptions, opts: MakeFsDataOptions): Promise<Buffer> {
@@ -345,13 +332,11 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         console.log(`🔧 Auto-appended '.c' to output file -> ${opts.outputFile}`);
     }
 
-    const gzipEnabled = opts.gzip ?? false;
-    const gzipLevel = opts.gzipLevel ?? DEFAULT_GZIP_LEVEL;
-    if (! isGzipLevel(gzipLevel)) throw new Error('gzipLevel must be an integer from 1 to 9.');
+    const compressor = createCompressor(opts);
 
     // Resolve existing paths so a previous output is excluded through aliases too.
     const existingOutputPath = fs.existsSync(opts.outputFile) ? fs.realpathSync(opts.outputFile) : undefined;
-    const allFiles = getFilesRecursive(opts.inputDir, opts.processSubs, gzipEnabled).filter(filePath => {
+    const allFiles = getFilesRecursive(opts.inputDir, opts.processSubs, compressor !== undefined).filter(filePath => {
         return existingOutputPath === undefined || path.relative(fs.realpathSync(filePath), existingOutputPath) !== '';
     });
     const symbolPaths = new Map<string, string>();
@@ -377,6 +362,8 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
     let totalCompressedSize = 0;
     let totalStoredSize = 0;
     let gzipFilesCount = 0;
+    let encodedFilesCount = 0;
+    let brotliFilesCount = 0;
 
     if (allFiles.length === 0) throw new Error(`Input directory is empty! Please put your web files (.html, .css, etc.) into:\n${path.resolve(opts.inputDir)}`);
 
@@ -384,7 +371,6 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
     const ccVersion = opts.includeHttpHeader ? getPackageVersion() : '';
 
     for (const { filePath, relativePath, varName } of inputFiles) {
-        const ext = path.extname(filePath).toLowerCase();
         let content: Buffer = fs.readFileSync(filePath);
 
         const originalFileSize = content.length;
@@ -394,22 +380,13 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         const rawContentLength = content.length;
         totalCompressedSize += rawContentLength;
 
-        let contentEncoding: 'gzip' | undefined;
-        let compressionNote: string | undefined;
-        if (gzipEnabled && GZIP_CANDIDATE_EXTENSIONS.has(ext)) {
-            const gzipContent = gzipDeterministic(content, gzipLevel);
-            if (gzipContent.length < content.length) {
-                content = gzipContent;
-                contentEncoding = 'gzip';
-                gzipFilesCount++;
-
-                const savedSize = rawContentLength - content.length;
-                const savedPercent = ((savedSize / rawContentLength) * 100).toFixed(1);
-                compressionNote = `gzip level ${gzipLevel}, original ${rawContentLength} B, stored ${content.length} B, saved ${savedSize} B (${savedPercent}%)`;
-            }
-            else compressionNote = `raw, original ${rawContentLength} B, gzip was not smaller`;
-        }
-        else if (gzipEnabled) compressionNote = 'raw, not a gzip candidate';
+        const stored = await storeContent(content, filePath, compressor);
+        content = stored.body;
+        const contentEncoding = stored.encoding;
+        const compressionNote = stored.note;
+        if (contentEncoding === 'gzip') gzipFilesCount++;
+        if (contentEncoding === 'br') brotliFilesCount++;
+        if (contentEncoding) encodedFilesCount++;
 
         totalStoredSize += content.length;
 
@@ -493,7 +470,7 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
             }
         }
         
-        const contentDescription = file.contentEncoding === 'gzip' ? 'gzip file data' : 'raw file data';
+        const contentDescription = file.contentEncoding ? `${file.contentEncoding} file data` : 'raw file data';
         cOutput += `\n\t/* ${contentDescription} (${file.contentBuffer.length} bytes) */\n`;
         cOutput += bufferToHexCArray(file.contentBuffer);
         cOutput += `};\n\n\n\n`;
@@ -547,7 +524,9 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
             storedSize: totalStoredSize,
             convertedSize: convertedSize,
             filesCount: orderedFileEntries.length,
-            gzipFilesCount
+            gzipFilesCount,
+            encodedFilesCount,
+            brotliFilesCount
         };
     }
 

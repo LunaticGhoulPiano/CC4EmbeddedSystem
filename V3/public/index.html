@@ -32,7 +32,6 @@
         .checkbox-label { display: flex; align-items: center; font-weight: normal; color: #cccccc; cursor: pointer; font-size: 14px; margin-bottom: 0; }
         .checkbox-label input[type="checkbox"] { margin-right: 8px; cursor: pointer; accent-color: #0e639c; }
         .gzip-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; padding-top: 12px; border-top: 1px solid #444; }
-        .gzip-toggle { white-space: nowrap; }
         .gzip-level-control { display: grid; grid-template-columns: auto 68px; align-items: center; justify-content: start; gap: 8px; margin: 0; font-weight: normal; color: #cccccc; font-size: 14px; }
         .gzip-level-control[hidden] { display: none; }
         .gzip-level { box-sizing: border-box; width: 68px; padding: 4px 6px; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; color: #d4d4d4; text-align: center; font-family: 'Consolas', monospace; }
@@ -98,8 +97,11 @@
             <label class="checkbox-label"><input type="checkbox" id="opt-useShortDoctype"> useShortDoctype</label>
         </div>
         <div class="gzip-options">
-            <label class="checkbox-label gzip-toggle"><input type="checkbox" id="opt-gzip">gzip resource storage</label>
+            <label class="gzip-level-control" for="opt-compression"><span>Storage</span><select id="opt-compression" class="gzip-level" style="width: auto;"><option value="none">Uncompressed</option><option value="gzip">gzip</option><option value="zopfli">Zopfli (gzip)</option><option value="brotli">Brotli (br)</option></select></label>
             <label id="gzip-level-control" class="gzip-level-control" for="opt-gzipLevel" hidden><span>gzip level</span><input type="number" id="opt-gzipLevel" class="gzip-level" min="1" max="9" value="9" disabled></label>
+            <label id="brotli-quality-control" class="gzip-level-control" for="opt-brotliQuality" hidden><span>Quality</span><input type="number" id="opt-brotliQuality" class="gzip-level" min="0" max="11" value="11" disabled></label>
+            <label id="zopfli-iterations-control" class="gzip-level-control" for="opt-zopfliIterations" hidden><span>Iterations</span><input type="number" id="opt-zopfliIterations" class="gzip-level" min="1" max="100" value="15" disabled></label>
+            <p id="brotli-note" style="grid-column: 1 / -1; margin: 0; color: #dcdcaa; font-size: 12px;" hidden>Brotli requires compatible clients. Browsers generally require HTTPS. Use gzip or Zopfli for plain HTTP devices.</p>
         </div>
     </details>
 
@@ -179,10 +181,17 @@
         document.body.classList.toggle('browse-locked', active);
     }
 
-    function syncGzipLevel() {
-        const enabled = document.getElementById('opt-gzip').checked;
-        document.getElementById('gzip-level-control').hidden = !enabled;
-        document.getElementById('opt-gzipLevel').disabled = !enabled;
+    function syncCompressionControls() {
+        const method = document.getElementById('opt-compression').value;
+        for (const [control, input, enabled] of [
+            ['gzip-level-control', 'opt-gzipLevel', method === 'gzip' || method === 'zopfli'],
+            ['brotli-quality-control', 'opt-brotliQuality', method === 'brotli'],
+            ['zopfli-iterations-control', 'opt-zopfliIterations', method === 'zopfli']
+        ]) {
+            document.getElementById(control).hidden = !enabled;
+            document.getElementById(input).disabled = !enabled;
+        }
+        document.getElementById('brotli-note').hidden = method !== 'brotli';
     }
 
     async function handleBrowse(targetId, type) {
@@ -239,16 +248,20 @@
                 document.getElementById('outputPath').value = data.lastBuild.dst || '';
             }
 
-            if (data.gzipOptions) {
-                document.getElementById('opt-gzip').checked = data.gzipOptions.gzip === true;
-                document.getElementById('opt-gzipLevel').value = data.gzipOptions.gzipLevel || 9;
-            }
-            syncGzipLevel();
+            const options = data.compressionOptions || {
+                compression: data.gzipOptions?.gzip ? 'gzip' : 'none',
+                gzipLevel: data.gzipOptions?.gzipLevel ?? 9
+            };
+            document.getElementById('opt-compression').value = options.compression;
+            document.getElementById('opt-gzipLevel').value = options.gzipLevel ?? 9;
+            document.getElementById('opt-brotliQuality').value = options.brotliQuality ?? 11;
+            document.getElementById('opt-zopfliIterations').value = options.zopfliIterations ?? 15;
+            syncCompressionControls();
         }
         catch (error) { console.error('Can\'t load saved paths!', error); }
     });
 
-    document.getElementById('opt-gzip').addEventListener('change', syncGzipLevel);
+    document.getElementById('opt-compression').addEventListener('change', syncCompressionControls);
 
     async function changePort() {
         const newPort = document.getElementById('guiPort').value.trim();
@@ -284,17 +297,27 @@
             removeRedundantAttributes: document.getElementById('opt-removeRedundantAttributes').checked,
             useShortDoctype: document.getElementById('opt-useShortDoctype').checked
         };
-        const gzip = document.getElementById('opt-gzip').checked;
+        const compression = document.getElementById('opt-compression').value;
         const gzipLevel = Number(document.getElementById('opt-gzipLevel').value);
+        const brotliQuality = Number(document.getElementById('opt-brotliQuality').value);
+        const zopfliIterations = Number(document.getElementById('opt-zopfliIterations').value);
         if (!Number.isInteger(gzipLevel) || gzipLevel < 1 || gzipLevel > 9) {
             alert('❌ gzip level must be an integer from 1 to 9.');
+            return;
+        }
+        if (!Number.isInteger(brotliQuality) || brotliQuality < 0 || brotliQuality > 11) {
+            alert('❌ Brotli quality must be an integer from 0 to 11.');
+            return;
+        }
+        if (!Number.isInteger(zopfliIterations) || zopfliIterations < 1 || zopfliIterations > 100) {
+            alert('❌ Zopfli iterations must be an integer from 1 to 100.');
             return;
         }
 
         const res = await fetch('/api/build', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ inputPath: inPath, outputPath: outPath, minifyOpts: minifyOptions, gzip, gzipLevel })
+            body: JSON.stringify({ inputPath: inPath, outputPath: outPath, minifyOpts: minifyOptions, compression, gzipLevel, brotliQuality, zopfliIterations })
         });
         const result = await res.json();
 

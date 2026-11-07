@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { gunzipSync } from 'node:zlib';
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 
 import { CliUsageError, getHelpText, parseCliArguments } from '../dist/cli.js';
 import { DEFAULT_HTML_MINIFY_OPTIONS } from '../dist/minify-options.js';
@@ -272,4 +272,35 @@ test('a build reads the package version once for all HTTP headers', async (t) =>
 
     await runMakeFsData(createBuildOptions(inputDirectory, outputFile, { includeHttpHeader: false }));
     assert.equal(versionReads, 1, 'A headerless build must not read the version');
+});
+
+test('new compressors feed final bytes, encodings and lengths into the C generator', async (t) => {
+    const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'cc4es-new-compressors-'));
+    t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+    const inputDirectory = path.join(temporaryDirectory, 'input');
+    fs.mkdirSync(inputDirectory);
+    const content = Buffer.from('A UTF-8 text resource: 測試 🌏\n'.repeat(100));
+    fs.writeFileSync(path.join(inputDirectory, 'page.txt'), content);
+    fs.writeFileSync(path.join(inputDirectory, 'tiny.txt'), 'x');
+    const binary = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    fs.writeFileSync(path.join(inputDirectory, 'image.png'), binary);
+    for (const compression of ['brotli', 'zopfli']) {
+        const outputFile = path.join(temporaryDirectory, `${compression}.c`);
+        const options = createBuildOptions(inputDirectory, outputFile, { compression, useHttp11: true });
+        const stats = await runMakeFsData(options);
+        const firstOutput = fs.readFileSync(outputFile);
+        const page = extractResponse(outputFile, '_page_txt');
+        const encoding = compression === 'brotli' ? 'br' : 'gzip';
+        assert.ok(page.header.includes(`Content-Encoding: ${encoding}\r\n`));
+        assert.ok(page.header.includes(`Content-Length: ${page.body.length}\r\n`));
+        assert.deepEqual(compression === 'brotli' ? brotliDecompressSync(page.body) : gunzipSync(page.body), content);
+        assert.doesNotMatch(extractResponse(outputFile, '_tiny_txt').header, /Content-Encoding/);
+        assert.deepEqual(extractResponse(outputFile, '_image_png').body, binary);
+        assert.equal(stats.encodedFilesCount, 1);
+        assert.equal(stats.gzipFilesCount, compression === 'zopfli' ? 1 : 0);
+        assert.equal(stats.brotliFilesCount, compression === 'brotli' ? 1 : 0);
+        assert.equal(stats.storedSize, page.body.length + 1 + binary.length);
+        await runMakeFsData(options);
+        assert.deepEqual(fs.readFileSync(outputFile), firstOutput);
+    }
 });

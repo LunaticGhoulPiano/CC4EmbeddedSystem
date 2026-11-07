@@ -1,5 +1,6 @@
 import { DEFAULT_HTML_MINIFY_OPTIONS, HtmlMinifyOptions } from './minify-options.js';
 import { DEFAULT_GZIP_LEVEL, isGzipLevel } from './gzip-options.js';
+import { isCompressionMethod, type CompressionMethod } from './compression/options.js';
 
 export class CliUsageError extends Error {
     public constructor(message: string) {
@@ -21,6 +22,9 @@ export interface CliArguments {
     svgoMultipass: boolean;
     gzip?: boolean;
     gzipLevel?: number;
+    compression?: CompressionMethod;
+    brotliQuality?: number;
+    zopfliIterations?: number;
 }
 
 const MINIFY_FLAGS: Readonly<Record<string, keyof HtmlMinifyOptions>> = {
@@ -135,15 +139,38 @@ export const parseCliArguments = (args: readonly string[]): CliArguments => {
                 break;
             case '--gzip':
                 parsed.gzip = true;
+                parsed.compression = 'gzip';
                 break;
             case '--no-gzip':
                 parsed.gzip = false;
+                parsed.compression = 'none';
                 break;
             case '--gzip-level': {
                 const value = args[index + 1];
                 if (! value || value.startsWith('--')) throw new CliUsageError('--gzip-level requires a value.');
 
                 parsed.gzipLevel = parseGzipLevel(value);
+                index++;
+                break;
+            }
+            case '--compression': {
+                const value = getRequiredValue(args, index, argument);
+                if (! isCompressionMethod(value)) throw new CliUsageError('--compression must be none, gzip, brotli or zopfli.');
+                parsed.compression = value;
+                index++;
+                break;
+            }
+            case '--brotli-quality':
+            case '--zopfli-iterations': {
+                const value = getRequiredValue(args, index, argument);
+                const min = argument === '--brotli-quality' ? 0 : 1;
+                const max = argument === '--brotli-quality' ? 11 : 100;
+                const number = Number(value);
+                if (! /^\d+$/.test(value) || !Number.isInteger(number) || number < min || number > max) {
+                    throw new CliUsageError(`${argument} must be an integer from ${min} to ${max}.`);
+                }
+                if (argument === '--brotli-quality') parsed.brotliQuality = number;
+                else parsed.zopfliIterations = number;
                 index++;
                 break;
             }
@@ -184,6 +211,12 @@ export const getHelpText = (): string => {
         '  --svgo-multipass                   Run SVGO optimization repeatedly',
         '  --[no-]gzip                        Enable or disable gzip resource storage (default: disabled)',
         `  --gzip-level <1-9>                 gzip compression level (default: ${DEFAULT_GZIP_LEVEL})`,
+        '  --compression <method>             Storage: none, gzip, brotli or zopfli (default: none)',
+        '  --brotli-quality <0-11>             Brotli quality (default: 11)',
+        '  --zopfli-iterations <1-100>         Zopfli iterations (default: 15; gzip-compatible output)',
+        '  Brotli requires br-capable clients; browsers generally require HTTPS.',
+        '  Stored encodings are fixed; no runtime Accept-Encoding negotiation.',
+        '  Compression switches use the last one supplied; omitted options use saved settings.',
         '',
         'HTML compression options:',
         '  --[no-]collapse-whitespace         --[no-]remove-comments',

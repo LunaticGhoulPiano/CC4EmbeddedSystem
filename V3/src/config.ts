@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { GzipBuildOptions, isGzipLevel } from './gzip-options.js';
+import { resolveCompressionOptions, type CompressionSettings } from './compression/options.js';
 
 export const CONFIG_FILE_NAME = 'cc4es_configs.json';
 
@@ -14,6 +15,7 @@ interface AppConfig {
     schemaVersion: number;
     lastBuild?: LastBuildPaths;
     gzipOptions?: GzipBuildOptions;
+    compressionOptions?: CompressionSettings;
 }
 
 const getStateDirectory = (): string => {
@@ -56,6 +58,10 @@ const readConfig = (): AppConfig => {
         const config: AppConfig = { schemaVersion: 2 };
         const gzipOptions = getGzipOptions(parsedConfig.gzipOptions);
         if (gzipOptions) config.gzipOptions = gzipOptions;
+        if (isRecord(parsedConfig.compressionOptions)) {
+            try { config.compressionOptions = resolveCompressionOptions(parsedConfig.compressionOptions); }
+            catch { /* Preserve paths and legacy gzip settings if newer options are invalid. */ }
+        }
 
         if (! isRecord(parsedConfig.lastBuild)) return config;
 
@@ -82,7 +88,13 @@ export const getLastGzipOptions = (): GzipBuildOptions | undefined => {
     return readConfig().gzipOptions;
 };
 
-export const saveLastBuildPaths = (src: string, dst: string, gzipOptions?: GzipBuildOptions): boolean => {
+export const getLastCompressionOptions = (): CompressionSettings | undefined => {
+    const config = readConfig();
+    if (config.compressionOptions) return config.compressionOptions;
+    return config.gzipOptions ? resolveCompressionOptions(config.gzipOptions) : undefined;
+};
+
+export const saveLastBuildPaths = (src: string, dst: string, options?: GzipBuildOptions | CompressionSettings): boolean => {
     const configFilePath = getConfigFilePath();
     const temporaryFilePath = `${configFilePath}.${process.pid}.tmp`;
     const configAlreadyExists = fs.existsSync(configFilePath);
@@ -90,7 +102,14 @@ export const saveLastBuildPaths = (src: string, dst: string, gzipOptions?: GzipB
         schemaVersion: 2,
         lastBuild: { src, dst }
     };
-    if (gzipOptions) config.gzipOptions = gzipOptions;
+    if (options) {
+        const settings = resolveCompressionOptions(options);
+        config.compressionOptions = settings;
+        config.gzipOptions = {
+            gzip: settings.compression === 'gzip' || settings.compression === 'zopfli',
+            gzipLevel: settings.gzipLevel
+        };
+    }
 
     try {
         fs.mkdirSync(path.dirname(configFilePath), { recursive: true });

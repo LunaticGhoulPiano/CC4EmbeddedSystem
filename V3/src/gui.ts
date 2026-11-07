@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 
 import path from 'node:path';
-import { CliUsageError, getHelpText, parseCliArguments } from './cli.js';
-import { getConfigFilePath, getLastBuildPaths, getLastGzipOptions, saveLastBuildPaths } from './config.js';
-import { DEFAULT_GZIP_LEVEL, GzipBuildOptions } from './gzip-options.js';
+import { CliUsageError, getHelpText, parseCliArguments, type CliArguments } from './cli.js';
+import { getConfigFilePath, getLastBuildPaths, getLastCompressionOptions, saveLastBuildPaths } from './config.js';
+import { resolveCompressionOptions } from './compression/options.js';
 import { runMakeFsData, MakeFsDataOptions } from './makefsdata.js';
-import { HtmlMinifyOptions } from './minify-options.js';
 import { startGuiServer } from './server.js';
 import { getPackageVersion } from './utils.js';
 
@@ -17,15 +16,11 @@ const getDefaultGuiPort = (): number => {
     return configuredPort;
 };
 
-const runHeadlessBuild = async (inputPath: string | undefined, outputPath: string | undefined, minifyOpts: HtmlMinifyOptions, optimizeSvg: boolean, svgoMultipass: boolean, gzipOverride: boolean | undefined, gzipLevelOverride: number | undefined): Promise<void> => {
+const runHeadlessBuild = async (args: CliArguments): Promise<void> => {
     const lastBuild = getLastBuildPaths();
-    const lastGzipOptions = getLastGzipOptions();
-    const selectedInputPath = inputPath ?? lastBuild?.src;
-    const selectedOutputPath = outputPath ?? lastBuild?.dst ?? 'fsdata.c';
-    const gzipOptions: GzipBuildOptions = {
-        gzip: gzipOverride ?? lastGzipOptions?.gzip ?? false,
-        gzipLevel: gzipLevelOverride ?? lastGzipOptions?.gzipLevel ?? DEFAULT_GZIP_LEVEL
-    };
+    const selectedInputPath = args.inputPath ?? lastBuild?.src;
+    const selectedOutputPath = args.outputPath ?? lastBuild?.dst ?? 'fsdata.c';
+    const compressionOptions = resolveCompressionOptions(args, getLastCompressionOptions());
 
     if (! selectedInputPath) {
         throw new CliUsageError('Headless mode requires --src, or a source path saved by a previous successful build.');
@@ -39,15 +34,15 @@ const runHeadlessBuild = async (inputPath: string | undefined, outputPath: strin
         useHttp11: false,
         supportSsi: true,
         precalcChksum: false,
-        minifyOpts,
-        optimizeSvg,
-        svgoMultipass,
-        ...gzipOptions
+        minifyOpts: args.minifyOpts,
+        optimizeSvg: args.optimizeSvg,
+        svgoMultipass: args.svgoMultipass,
+        ...compressionOptions
     };
 
     const stats = await runMakeFsData(opts);
-    saveLastBuildPaths(opts.inputDir, opts.outputFile, gzipOptions);
-    console.log(`✨ Build complete: ${stats.filesCount} file(s), ${stats.originalSize} -> ${stats.compressedSize} -> ${stats.storedSize} bytes (${stats.gzipFilesCount} gzip file(s)).`);
+    saveLastBuildPaths(opts.inputDir, opts.outputFile, compressionOptions);
+    console.log(`✨ Build complete: ${stats.filesCount} file(s), ${stats.originalSize} -> ${stats.compressedSize} -> ${stats.storedSize} bytes (${stats.encodedFilesCount} compressed file(s)).`);
 };
 
 const main = async (): Promise<void> => {
@@ -70,7 +65,7 @@ const main = async (): Promise<void> => {
         }
 
         if (args.headless) {
-            await runHeadlessBuild(args.inputPath, args.outputPath, args.minifyOpts, args.optimizeSvg, args.svgoMultipass, args.gzip, args.gzipLevel);
+            await runHeadlessBuild(args);
             return;
         }
 
