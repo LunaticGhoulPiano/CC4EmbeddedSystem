@@ -17,7 +17,12 @@ const randomBytes = (length, seed = 12345) => Buffer.from(Array.from({ length },
 }));
 
 test('compression options keep legacy gzip settings and validate each method', () => {
-    assert.equal(resolveCompressionOptions({}).compression, 'none');
+    assert.equal(resolveCompressionOptions({}).compression, 'brotli');
+    assert.equal(resolveCompressionOptions({}).brotliQuality, 11);
+    const cliDefaults = resolveCompressionOptions(parseCliArguments(['--headless', '--src', 'source']));
+    assert.equal(cliDefaults.compression, 'brotli');
+    assert.equal(cliDefaults.brotliQuality, 11);
+    assert.equal(resolveCompressionOptions({ compression: 'none' }).compression, 'none');
     assert.equal(resolveCompressionOptions({ gzip: true }).compression, 'gzip');
     assert.equal(resolveCompressionOptions({ gzip: false }).compression, 'none');
     const saved = resolveCompressionOptions({ compression: 'brotli', brotliQuality: 0 });
@@ -145,18 +150,43 @@ test('saved compression settings migrate legacy gzip and preserve Brotli quality
 test('the GUI switches controls and submits the chosen compressor and parameters', async () => {
     const source = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
     const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
+    assert.match(source, /<option value="brotli" selected>/);
     const elements = new Map();
     const getElementById = id => {
         if (!elements.has(id)) elements.set(id, { value: '', checked: true, addEventListener() {} });
         return elements.get(id);
     };
     const requests = [];
+    const listeners = new Map();
+    let config = {};
+    getElementById('opt-compression').value = 'brotli';
+    getElementById('opt-brotliQuality').value = '11';
     const context = vm.createContext({
-        document: { getElementById }, window: { location: { port: '3000' }, addEventListener() {} }, console,
-        fetch: async (url, options) => { requests.push([url, JSON.parse(options.body)]); return { json: async () => ({ success: false, message: 'test' }) }; },
+        document: { getElementById }, window: { location: { port: '3000' }, addEventListener: (name, callback) => listeners.set(name, callback) }, console,
+        fetch: async (url, options) => {
+            if (url === '/api/config') return { json: async () => config };
+            if (url !== '/api/build') return { json: async () => ({}) };
+            requests.push([url, JSON.parse(options.body)]);
+            return { json: async () => ({ success: false, message: 'test' }) };
+        },
         alert() {}, setTimeout() {}
     });
     vm.runInContext(script, context);
+    assert.equal(getElementById('brotli-quality-control').hidden, false);
+    assert.equal(getElementById('opt-brotliQuality').disabled, false);
+    assert.equal(getElementById('brotli-note').hidden, false);
+    for (const [saved, method, quality] of [
+        [{}, 'brotli', 11],
+        [{ gzipOptions: { gzip: false, gzipLevel: 6 } }, 'none', 11],
+        [{ gzipOptions: { gzip: true, gzipLevel: 6 } }, 'gzip', 11],
+        [{ compressionOptions: { compression: 'brotli', brotliQuality: 0 } }, 'brotli', 0],
+        [{ compressionOptions: { compression: 'none' } }, 'none', 11]
+    ]) {
+        config = saved;
+        await listeners.get('DOMContentLoaded')();
+        assert.equal(getElementById('opt-compression').value, method);
+        assert.equal(Number(getElementById('opt-brotliQuality').value), quality);
+    }
     for (const method of ['none', 'gzip', 'zopfli', 'brotli']) {
         getElementById('opt-compression').value = method;
         vm.runInContext('syncCompressionControls()', context);

@@ -1,6 +1,6 @@
 import { DEFAULT_HTML_MINIFY_OPTIONS, HtmlMinifyOptions } from './minify-options.js';
 import { DEFAULT_GZIP_LEVEL, isGzipLevel } from './gzip-options.js';
-import { isCompressionMethod, type CompressionMethod } from './compression/options.js';
+import { DEFAULT_COMPRESSION_SETTINGS, isCompressionMethod, type CompressionMethod } from './compression/options.js';
 
 export class CliUsageError extends Error {
     public constructor(message: string) {
@@ -209,10 +209,10 @@ export const getHelpText = (): string => {
         '  -p, --port <1-65535>               GUI server port',
         '  --[no-]optimize-svg                Enable or disable SVGO (default: enabled)',
         '  --svgo-multipass                   Run SVGO optimization repeatedly',
-        '  --[no-]gzip                        Enable or disable gzip resource storage (default: disabled)',
+        '  --[no-]gzip                        Select gzip storage, or none with --no-gzip',
         `  --gzip-level <1-9>                 gzip compression level (default: ${DEFAULT_GZIP_LEVEL})`,
-        '  --compression <method>             Storage: none, gzip, brotli or zopfli (default: none)',
-        '  --brotli-quality <0-11>             Brotli quality (default: 11)',
+        `  --compression <method>             Storage: none, gzip, brotli or zopfli (default: ${DEFAULT_COMPRESSION_SETTINGS.compression})`,
+        `  --brotli-quality <0-11>             Brotli quality (default: ${DEFAULT_COMPRESSION_SETTINGS.brotliQuality})`,
         '  --zopfli-iterations <1-100>         Zopfli iterations (default: 15; gzip-compatible output)',
         '  Brotli requires br-capable clients; browsers generally require HTTPS.',
         '  Stored encodings are fixed; no runtime Accept-Encoding negotiation.',

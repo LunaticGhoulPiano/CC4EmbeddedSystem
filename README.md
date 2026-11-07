@@ -1,8 +1,8 @@
 # [CC4EmbeddedSystem](https://github.com/LunaticGhoulPiano/CC4EmbeddedSystem)
 
-A modern, cross-platform tool to optimize front-end web files (HTML/CSS/JS/SVG) and compile them into a single C array file (`fsdata.c`). 
+A tool to optimize front-end web assets (HTML/CSS/JS/SVG) and convert them into a single C source file (`fsdata.c`) for embedded web servers.
 
-It is designed specifically to optimize web servers running on resource-constrained embedded systems (like STM32) using the **lwIP TCP/IP stack**. By heavily compressing assets before flashing them into the MCU, it saves precious ROM/RAM space while keeping your web development workflow smooth.
+It targets resource-constrained systems, such as STM32 devices using the **lwIP TCP/IP stack**. Assets are optimized and optionally compressed before being stored in Flash; the browser decompresses encoded responses.
 
 ---
 
@@ -10,18 +10,21 @@ It is designed specifically to optimize web servers running on resource-constrai
 
 This project has continuously evolved to drop heavy dependencies and embrace modern tech stacks:
 
-* **[V3 (Current & Recommended)](./V3/README.md):** A pure **TypeScript / Node.js** implementation with browser GUI and headless CLI modes. It routes HTML to `html-minifier-next`, CSS to Lightning CSS, JavaScript to esbuild, and SVG to SVGO before generating lwIP `fsdata.c`. Optional deterministic gzip storage adds `Content-Encoding: gzip` only when an eligible text asset becomes smaller. It remembers the last successful paths and gzip options in local application data, and replaces `makefsdata.exe` with safe, cross-platform TypeScript logic. **(Zero C/Java/DLL dependencies!)**
+* **[V3 (Recommended)](./V3/README.md):** A **TypeScript / Node.js** implementation with a local browser GUI and headless CLI. It optimizes HTML, CSS, JavaScript, and SVG, and supports uncompressed, gzip, Brotli, and gzip-compatible TypeScript Zopfli storage. Compressed bodies are retained only when smaller. Successful paths and compression settings are saved locally. The legacy `makefsdata.exe`, Java tools, and DLLs are not required.
 * **[V2 (Legacy)](./V2/README.md):** A Python + CustomTkinter desktop application. It wraps the legacy Java compressors and C executables into a standalone Windows GUI.
 * **[V1 (Legacy)](./V1/README.md):** The original Bare-metal PowerShell script workflow.
 
 ## 📦 Requirements
 
 ### For V3 (Recommended, Cross-platform)
+
 * [Node.js](https://nodejs.org/) 22.13.0 or newer. Use the latest patched LTS for builds.
-* That's it! Works on Windows, macOS, and Linux.
+* The V3 tool uses Node.js instead of the legacy Windows executables and Java compressors.
 
 ### For V1 & V2 (Legacy Windows Environments)
+
 If you must maintain the old workflows, you will need the following legacy assets:
+
 * [Java JDK](https://www.oracle.com/java/technologies/downloads/) (Tested on JDK 25 x64)
 * [Google HTML Compressor](https://code.google.com/archive/p/htmlcompressor/downloads) (`htmlcompressor-1.5.3.jar`)
 * [YUI Compressor](https://github.com/yui/yuicompressor/releases/tag/v2.4.8) (`yuicompressor-2.4.8.jar`)
@@ -32,15 +35,27 @@ If you must maintain the old workflows, you will need the following legacy asset
 
 ## 🚀 How to use
 
-Depending on which version you want to use, please navigate to the respective directory and read its dedicated documentation:
+Install the V3 npm package and start the GUI:
 
-* 👉 **[V3 Documentation](./V3/README.md)** (Highly Recommended)
+```bash
+npm install -g cc4-embedded-system
+cc4es
+```
+
+The GUI defaults to `http://localhost:3000`. A fresh configuration selects **Brotli quality 11**; saved settings and explicit selections take precedence. Browsers generally require **HTTPS** for `Content-Encoding: br` (Brotli). Use gzip or Zopfli for HTTP-only device pages.
+
+Version-specific quick starts and commands:
+
+* 👉 **[V3 Quick Start, Development & Demos](./V3/README.md)**
 * 👉 [V2 Documentation](./V2/README.md)
 * 👉 [V1 Documentation](./V1/README.md)
+
+The V3 source includes production frontend demos from DuetWebControl, ESP3D-WEBUI, and WLED. Their tests compare prepared source assets with raw C and decompressed C payloads. Target lwIP compilation, HTTP server integration, and real hardware behavior require separate verification.
 
 ---
 
 ## 📂 Project Structure
+
 ```text
 CC4EmbeddedSystem
 ├── V1
@@ -64,21 +79,29 @@ CC4EmbeddedSystem
 │   │   ├── gui.ts            // CLI entry point
 │   │   ├── cli.ts            // Command-line parsing and help text
 │   │   ├── server.ts         // Express GUI server
-│   │   ├── config.ts         // Persistent paths and gzip options
-│   │   ├── gzip-options.ts   // Shared gzip defaults and validation
+│   │   ├── config.ts         // Persistent paths and compression settings
+│   │   ├── compression/      // Shared storage policy and gzip/Brotli/Zopfli codecs
+│   │   ├── gzip-options.ts   // gzip defaults and compatibility options
 │   │   ├── minify-options.ts // Shared HTML minifier options
-│   │   ├── makefsdata.ts     // Asset routing, gzip, and C generation
+│   │   ├── makefsdata.ts     // Asset optimization, storage, and C generation
 │   │   └── utils.ts          // Package version lookup
 │   ├── public
 │   │   └── index.html
-│   ├── Screenshot
-│   │   ├── cli.png
-│   │   ├── src.png
-│   │   ├── dst.png
-│   │   ├── v3.2.1_result1.png
-│   │   └── v3.2.1_result2.png
+│   ├── Screenshot/           // GUI screenshots
 │   ├── test
-│   │   └── cc4es.test.mjs    // Native Node.js regression tests
+│   │   ├── cc4es.test.mjs    // Generator and CLI regression tests
+│   │   └── compression.test.mjs // Codec, configuration, and GUI logic tests
+│   ├── demo
+│   │   ├── src/             // DuetWebControl, ESP3D-WEBUI, and WLED submodules
+│   │   ├── dst/             // Raw and compressed C files, grouped by project
+│   │   ├── projects.mjs     // Pinned revisions and output settings
+│   │   ├── prepare.mjs      // Build upstream production assets
+│   │   ├── build.mjs        // Generate C files
+│   │   ├── fsdata.mjs       // Read C arrays and decode response bodies
+│   │   ├── test.mjs         // Compare source/raw/decoded payloads
+│   │   ├── mocks.mjs        // Limited simulated device APIs
+│   │   └── serve.mjs        // Local HTTP/HTTPS demo server
+│   ├── licenses/            // Third-party attribution
 │   ├── package.json
 │   ├── package-lock.json
 │   └── tsconfig.json

@@ -4,39 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { brotliDecompressSync, gunzipSync } from 'node:zlib';
+import { brotliCompressSync, brotliDecompressSync, constants, gunzipSync } from 'node:zlib';
 
 import { CliUsageError, getHelpText, parseCliArguments } from '../dist/cli.js';
 import { DEFAULT_HTML_MINIFY_OPTIONS } from '../dist/minify-options.js';
 import { runMakeFsData } from '../dist/makefsdata.js';
-
-const getDataArray = (outputFile, variableName) => {
-    const source = fs.readFileSync(outputFile, 'utf8');
-    const declaration = `static const unsigned char data_${variableName}[] = {`;
-    const start = source.indexOf(declaration);
-    assert.notEqual(start, -1, `Missing data array for ${variableName}`);
-
-    const end = source.indexOf('\n};', start);
-    assert.notEqual(end, -1, `Unterminated data array for ${variableName}`);
-
-    const bytes = [...source.slice(start, end).matchAll(/0x([0-9a-f]{2})/g)].map((match) => Number.parseInt(match[1], 16));
-    return Buffer.from(bytes);
-};
-
-const extractResponse = (outputFile, variableName) => {
-    const data = getDataArray(outputFile, variableName);
-    const nameEnd = data.indexOf(0);
-    assert.notEqual(nameEnd, -1, `Missing URL terminator for ${variableName}`);
-
-    const response = data.subarray(nameEnd + 1);
-    const headerEnd = response.indexOf(Buffer.from('\r\n\r\n', 'ascii'));
-    assert.notEqual(headerEnd, -1, `Missing HTTP header terminator for ${variableName}`);
-
-    return {
-        header: response.subarray(0, headerEnd + 4).toString('ascii'),
-        body: response.subarray(headerEnd + 4)
-    };
-};
+import { extractResponse } from '../demo/fsdata.mjs';
 
 const createBuildOptions = (inputDir, outputFile, overrides = {}) => {
     return {
@@ -50,6 +23,7 @@ const createBuildOptions = (inputDir, outputFile, overrides = {}) => {
         minifyOpts: { ...DEFAULT_HTML_MINIFY_OPTIONS },
         optimizeSvg: false,
         svgoMultipass: false,
+        gzip: false,
         ...overrides
     };
 };
@@ -72,6 +46,29 @@ test('CLI exposes and validates gzip options', () => {
         () => parseCliArguments(['--headless', '--src', 'src', '--gzip-level']),
         CliUsageError
     );
+});
+
+test('generator defaults to Brotli quality 11 when compression is omitted', async (t) => {
+    const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'cc4es-default-brotli-'));
+    t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+    const inputDirectory = path.join(temporaryDirectory, 'input');
+    fs.mkdirSync(inputDirectory);
+    const content = Buffer.from('Default Brotli resource: 測試 🌏\n'.repeat(100));
+    fs.writeFileSync(path.join(inputDirectory, 'page.txt'), content);
+    const outputFile = path.join(temporaryDirectory, 'fsdata.c');
+    const options = createBuildOptions(inputDirectory, outputFile, { useHttp11: true });
+    delete options.gzip;
+    const stats = await runMakeFsData(options);
+    const response = extractResponse(outputFile, '_page_txt');
+    const expected = brotliCompressSync(content, { params: {
+        [constants.BROTLI_PARAM_QUALITY]: 11,
+        [constants.BROTLI_PARAM_SIZE_HINT]: content.length
+    } });
+    assert.equal(response.headers['content-encoding'], 'br');
+    assert.equal(response.headers['content-length'], String(expected.length));
+    assert.deepEqual(response.body, expected);
+    assert.deepEqual(brotliDecompressSync(response.body), content);
+    assert.equal(stats.brotliFilesCount, 1);
 });
 
 test('generator keeps JavaScript comment wrappers out of the HTML minifier', async (t) => {
@@ -272,6 +269,33 @@ test('a build reads the package version once for all HTTP headers', async (t) =>
 
     await runMakeFsData(createBuildOptions(inputDirectory, outputFile, { includeHttpHeader: false }));
     assert.equal(versionReads, 1, 'A headerless build must not read the version');
+});
+
+test('pure conversion preserves source bytes without parsing or optimizing content', async (t) => {
+    const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'cc4es-raw-'));
+    t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+    const inputDirectory = path.join(temporaryDirectory, 'input');
+    fs.mkdirSync(inputDirectory);
+    const files = {
+        'page.html': Buffer.from('\uFEFF<!doctype html>\r\n<!-- keep -->\r\n<html><head><meta charset="utf-8" /></head><body>  測試 🌏  </body></html>\r\n'),
+        'app.js': Buffer.from('// keep this comment\r\nconst value = 1 + 2;\r\n'),
+        'theme.css': Buffer.from('/* keep this comment */\r\nbody { color: red; }\r\n'),
+        'icon.svg': Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><!-- keep --><rect width="10" height="10" /></svg>\r\n'),
+        'image.png': Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 255])
+    };
+    for (const [name, bytes] of Object.entries(files)) fs.writeFileSync(path.join(inputDirectory, name), bytes);
+    const outputFile = path.join(temporaryDirectory, 'fsdata_raw.c');
+    const stats = await runMakeFsData(createBuildOptions(inputDirectory, outputFile, {
+        compression: 'none', minifyOpts: false, optimizeSvg: true
+    }));
+    for (const [name, bytes] of Object.entries(files)) {
+        const response = extractResponse(outputFile, '_' + name.replace(/\./g, '_'));
+        assert.equal(response.headers['content-encoding'], undefined);
+        assert.deepEqual(response.body, bytes, name);
+    }
+    assert.equal(stats.filesCount, Object.keys(files).length);
+    assert.equal(stats.encodedFilesCount, 0);
+    assert.equal(stats.storedSize, stats.originalSize);
 });
 
 test('new compressors feed final bytes, encodings and lengths into the C generator', async (t) => {

@@ -17,6 +17,9 @@
         input[type="text"] { flex: 1; padding: 10px; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; color: #d4d4d4; box-sizing: border-box; font-family: 'Consolas', monospace; }
         input[type="text"]:focus { outline: none; border-color: #569cd6; }
         input::placeholder { color: #888; }
+        input[type="number"] { appearance: textfield; text-align: center; }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         
         /* Browse */
         .btn-browse { width: auto; padding: 0 15px; background: #3a3d41; font-size: 13px; border: 1px solid #555; color: #d4d4d4; cursor: pointer; border-radius: 4px; }
@@ -31,10 +34,14 @@
         .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
         .checkbox-label { display: flex; align-items: center; font-weight: normal; color: #cccccc; cursor: pointer; font-size: 14px; margin-bottom: 0; }
         .checkbox-label input[type="checkbox"] { margin-right: 8px; cursor: pointer; accent-color: #0e639c; }
-        .gzip-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; padding-top: 12px; border-top: 1px solid #444; }
-        .gzip-level-control { display: grid; grid-template-columns: auto 68px; align-items: center; justify-content: start; gap: 8px; margin: 0; font-weight: normal; color: #cccccc; font-size: 14px; }
+        .gzip-options { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: start; gap: 8px 16px; margin-top: 15px; padding-top: 12px; border-top: 1px solid #444; }
+        .compression-algorithm { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; color: #cccccc; font-size: 14px; white-space: nowrap; }
+        .compression-parameters { display: grid; gap: 8px; justify-items: end; }
+        .gzip-level-control { display: grid; grid-template-columns: auto 68px; align-items: center; justify-content: end; gap: 8px; margin: 0; font-weight: normal; color: #cccccc; font-size: 14px; }
         .gzip-level-control[hidden] { display: none; }
-        .gzip-level { box-sizing: border-box; width: 68px; padding: 4px 6px; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; color: #d4d4d4; text-align: center; font-family: 'Consolas', monospace; }
+        .gzip-level, .compression-select { box-sizing: border-box; height: 30px; padding: 4px 6px; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; color: #d4d4d4; font-family: 'Consolas', monospace; font-size: 14px; line-height: 20px; }
+        .gzip-level { width: 68px; text-align: center; }
+        .compression-select { width: max-content; flex: none; }
 
         /* Compression Stats Panel */
         .stats-panel { background: #1e1e1e; border: 1px solid #444; border-radius: 4px; padding: 15px; margin-bottom: 20px; display: none; }
@@ -97,11 +104,13 @@
             <label class="checkbox-label"><input type="checkbox" id="opt-useShortDoctype"> useShortDoctype</label>
         </div>
         <div class="gzip-options">
-            <label class="gzip-level-control" for="opt-compression"><span>Storage</span><select id="opt-compression" class="gzip-level" style="width: auto;"><option value="none">Uncompressed</option><option value="gzip">gzip</option><option value="zopfli">Zopfli (gzip)</option><option value="brotli">Brotli (br)</option></select></label>
-            <label id="gzip-level-control" class="gzip-level-control" for="opt-gzipLevel" hidden><span>gzip level</span><input type="number" id="opt-gzipLevel" class="gzip-level" min="1" max="9" value="9" disabled></label>
-            <label id="brotli-quality-control" class="gzip-level-control" for="opt-brotliQuality" hidden><span>Quality</span><input type="number" id="opt-brotliQuality" class="gzip-level" min="0" max="11" value="11" disabled></label>
-            <label id="zopfli-iterations-control" class="gzip-level-control" for="opt-zopfliIterations" hidden><span>Iterations</span><input type="number" id="opt-zopfliIterations" class="gzip-level" min="1" max="100" value="15" disabled></label>
-            <p id="brotli-note" style="grid-column: 1 / -1; margin: 0; color: #dcdcaa; font-size: 12px;" hidden>Brotli requires compatible clients. Browsers generally require HTTPS. Use gzip or Zopfli for plain HTTP devices.</p>
+            <label class="compression-algorithm" for="opt-compression"><span>Compress Algorithm</span><select id="opt-compression" class="compression-select"><option value="none">Uncompressed</option><option value="gzip">gzip</option><option value="zopfli">Zopfli (gzip)</option><option value="brotli" selected>Brotli (br)</option></select></label>
+            <div class="compression-parameters">
+                <label id="gzip-level-control" class="gzip-level-control" for="opt-gzipLevel" hidden><span>gzip level</span><input type="number" id="opt-gzipLevel" class="gzip-level" min="1" max="9" value="9" disabled></label>
+                <label id="brotli-quality-control" class="gzip-level-control" for="opt-brotliQuality" hidden><span>Quality</span><input type="number" id="opt-brotliQuality" class="gzip-level" min="0" max="11" value="11" disabled></label>
+                <label id="zopfli-iterations-control" class="gzip-level-control" for="opt-zopfliIterations" hidden><span>Iterations</span><input type="number" id="opt-zopfliIterations" class="gzip-level" min="1" max="100" value="15" disabled></label>
+            </div>
+            <p id="brotli-note" style="grid-column: 1 / -1; margin: 0; color: #dcdcaa; font-size: 12px;" hidden>Browsers generally require HTTPS for Brotli.</p>
         </div>
     </details>
 
@@ -249,7 +258,7 @@
             }
 
             const options = data.compressionOptions || {
-                compression: data.gzipOptions?.gzip ? 'gzip' : 'none',
+                compression: data.gzipOptions ? (data.gzipOptions.gzip ? 'gzip' : 'none') : 'brotli',
                 gzipLevel: data.gzipOptions?.gzipLevel ?? 9
             };
             document.getElementById('opt-compression').value = options.compression;
@@ -262,6 +271,7 @@
     });
 
     document.getElementById('opt-compression').addEventListener('change', syncCompressionControls);
+    syncCompressionControls();
 
     async function changePort() {
         const newPort = document.getElementById('guiPort').value.trim();

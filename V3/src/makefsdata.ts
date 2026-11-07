@@ -82,7 +82,8 @@ export interface MakeFsDataOptions extends CompressionOptions {
     useHttp11: boolean;
     supportSsi: boolean;
     precalcChksum: boolean;
-    minifyOpts?: HtmlMinifyOptions;
+    /** false preserves source bytes, bypassing all content optimization. */
+    minifyOpts?: HtmlMinifyOptions | false;
     optimizeSvg?: boolean;
     svgoMultipass?: boolean;
 }
@@ -376,7 +377,9 @@ export async function runMakeFsData(opts: MakeFsDataOptions): Promise<BuildStats
         const originalFileSize = content.length;
         totalOriginalSize += originalFileSize;
 
-        content = await optimizeContent(filePath, relativePath, content, activeCompressOpts, opts);
+        if (activeCompressOpts !== false) {
+            content = await optimizeContent(filePath, relativePath, content, activeCompressOpts, opts);
+        }
         const rawContentLength = content.length;
         totalCompressedSize += rawContentLength;
 

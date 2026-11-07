@@ -19,7 +19,7 @@ export interface CompressionSettings {
 }
 
 export const DEFAULT_COMPRESSION_SETTINGS: Readonly<CompressionSettings> = {
-    compression: 'none', gzipLevel: DEFAULT_GZIP_LEVEL, brotliQuality: 11, zopfliIterations: 15
+    compression: 'brotli', gzipLevel: DEFAULT_GZIP_LEVEL, brotliQuality: 11, zopfliIterations: 15
 };
 
 export const isCompressionMethod = (value: unknown): value is CompressionMethod => {

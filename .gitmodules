@@ -1,0 +1,9 @@
+[submodule "DuetWebControl"]
+	path = V3/demo/src/DuetWebControl
+	url = https://github.com/Duet3D/DuetWebControl.git
+[submodule "ESP3D-WEBUI"]
+	path = V3/demo/src/ESP3D-WEBUI
+	url = https://github.com/luc-github/ESP3D-WEBUI.git
+[submodule "WLED"]
+	path = V3/demo/src/WLED
+	url = https://github.com/wled/WLED.git
